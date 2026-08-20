@@ -52,6 +52,10 @@ def run_training(config: dict[str, Any], root: Path) -> dict[str, Any]:
     output_dir = root / training_cfg["output_dir"]
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    use_bf16 = training_cfg.get("bf16", True)
+    # T4 / older GPUs: prefer fp16 when bf16 is disabled (e.g. Colab free).
+    use_fp16 = training_cfg.get("fp16", not use_bf16)
+
     sft_args = SFTConfig(
         output_dir=str(output_dir),
         per_device_train_batch_size=training_cfg["per_device_train_batch_size"],
@@ -66,7 +70,8 @@ def run_training(config: dict[str, Any], root: Path) -> dict[str, Any]:
         eval_steps=training_cfg.get("eval_steps", 200),
         eval_strategy=training_cfg.get("eval_strategy", "steps") if eval_dataset else "no",
         save_total_limit=training_cfg.get("save_total_limit", 3),
-        bf16=training_cfg.get("bf16", True),
+        bf16=use_bf16,
+        fp16=use_fp16,
         optim=training_cfg.get("optim", "adamw_8bit"),
         seed=training_cfg.get("seed", 3407),
         report_to=training_cfg.get("report_to", "none"),

@@ -79,6 +79,17 @@ src/qwen_agentic_ft/
 
 On Windows, if `unsloth` install fails, follow [Unsloth install docs](https://github.com/unslothai/unsloth) for your CUDA version, then rerun `python scripts/setup_env.py --extra train`.
 
+### Google Colab (free T4)
+
+If you do not have a local NVIDIA GPU, use the notebook:
+
+1. Upload `data/processed/train.jsonl` and `val.jsonl` to Google Drive at `MyDrive/qwen-agentic-ft/data/processed/`
+2. Open [`notebooks/colab_train_qwen_agentic.ipynb`](notebooks/colab_train_qwen_agentic.ipynb) in Colab (**Runtime → T4 GPU**)
+3. Keep `MAX_STEPS = 10` for a smoke test, then raise / set to `None` for a fuller run
+4. Download the LoRA zip from the last cell (also saved on Drive)
+
+The notebook clones this repo, installs Unsloth, and writes checkpoints to Drive so disconnects are less painful.
+
 ## Context length
 
 Qwen3.5-2B supports very long context at **inference**, but LoRA training seq length is bounded by VRAM. Start at 2048; increase `max_seq_length` in `config/training.yaml` if your GPU allows.
