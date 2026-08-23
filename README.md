@@ -63,8 +63,12 @@ harness.settings.yaml
 - **Phase 4** — Tiered routing, LangGraph orchestrator, skill dispatch
 - **Phase 5** — OTel GenAI spans, event ledger, operational vs content-capture sampling
 - **Phase 7** — Sub-agent spawning via DeclarativeAgent + HandoffPacket/AgentResult
-- **Production integrations** — Anthropic/OpenAI LLM, Firecrawl search, fpdf2 PDF, HITL resume, MCP bootstrap, SQLite persistence
+- **Production integrations** — Anthropic/OpenAI LLM, Firecrawl search, fpdf2 PDF, HITL resume, MCP bootstrap, SQLite persistence, Langfuse OTel, data connectors
 
 ## Related project
 
 Qwen agentic fine-tuning lives on a separate branch (`cursor/qwen-agentic-ft-setup-7e0b`) — not part of this harness codebase.
+
+## Data connectors
+
+See **[CONNECTORS.md](CONNECTORS.md)** for Postgres, Snowflake, Azure AI Search, and MCP configuration.

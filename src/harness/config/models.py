@@ -16,7 +16,7 @@ class ContextPackConfig(BaseModel):
 
 class ConnectorConfig(BaseModel):
     name: str
-    kind: Literal["postgres", "snowflake", "redis", "vector_index"]
+    kind: Literal["postgres", "snowflake", "redis", "vector_index", "azure_ai_search"]
     host: str | None = None
     database: str | None = None
     user: str | None = None

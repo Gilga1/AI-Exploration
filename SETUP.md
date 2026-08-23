@@ -63,6 +63,8 @@ source .venv/bin/activate
 
 ## 3. Configure API keys
 
+> **Yes, this is a FastAPI backend.** Run with `harness-serve` (Uvicorn). Dependencies are in `pyproject.toml` and `requirements.txt` — install via `pip install -e .` or `pip install -r requirements.txt`.
+
 Copy the example env file:
 
 ```powershell
@@ -91,12 +93,42 @@ HARNESS_SECRET_ANTHROPIC_API_KEY
 | `${secret:anthropic-api-key}` | `HARNESS_SECRET_ANTHROPIC_API_KEY` |
 | `${secret:openai-api-key}` | `HARNESS_SECRET_OPENAI_API_KEY` |
 | `${secret:firecrawl-api-key}` | `HARNESS_SECRET_FIRECRAWL_API_KEY` |
+| `${secret:azure-postgres-password}` | `HARNESS_SECRET_AZURE_POSTGRES_PASSWORD` |
+| `${secret:azure-search-api-key}` | `HARNESS_SECRET_AZURE_SEARCH_API_KEY` |
+| `LANGFUSE_PUBLIC_KEY` | Langfuse public key (OTel traces) |
+| `LANGFUSE_SECRET_KEY` | Langfuse secret key |
 | `${env:REDIS_HOST}` | `REDIS_HOST` |
 
 Get keys from:
 - **Anthropic:** https://console.anthropic.com/
 - **OpenAI:** https://platform.openai.com/api-keys
 - **Firecrawl:** https://www.firecrawl.dev/
+- **Langfuse:** https://langfuse.com/ (Settings → API Keys)
+
+### Langfuse (OpenTelemetry export)
+
+Traces export automatically when Langfuse keys are set:
+
+```powershell
+$env:LANGFUSE_PUBLIC_KEY = "pk-lf-..."
+$env:LANGFUSE_SECRET_KEY = "sk-lf-..."
+$env:LANGFUSE_BASE_URL = "https://cloud.langfuse.com"   # or US: https://us.cloud.langfuse.com
+```
+
+Verify at `GET /admin/capabilities` — `langfuse_enabled` should be `true`.
+
+Spans use OTel GenAI conventions (`gen_ai.operation.name`, `gen_ai.agent.name`, etc.) and appear in your Langfuse project dashboard.
+
+### Data connectors (Postgres, Snowflake, Azure AI Search)
+
+See **[CONNECTORS.md](CONNECTORS.md)** for full configuration of Azure Postgres, Azure AI Search, Snowflake, and MCP.
+
+Quick install for optional backends:
+
+```powershell
+pip install -r requirements-azure.txt      # Azure AI Search
+pip install -r requirements-snowflake.txt  # Snowflake
+```
 
 ---
 
@@ -372,7 +404,8 @@ approvals_db_path: data/harness_approvals.db
 | Reflective / nightly memory curation | Not implemented |
 | Async agent workers (Celery/queue) | Not implemented |
 | Sandbox microVM execution | Not implemented |
-| OTel export to Datadog/Honeycomb | In-memory only |
+| OTel export to Langfuse | Set `LANGFUSE_PUBLIC_KEY` + `LANGFUSE_SECRET_KEY` |
+| OTel export to Datadog/Honeycomb | Not yet implemented |
 | Hot reload of plugins | Restart required |
 
 ---

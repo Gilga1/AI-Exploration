@@ -1,0 +1,12 @@
+name: sales_postgres
+kind: postgres
+host: ${env:AZURE_POSTGRES_HOST}
+database: ${env:AZURE_POSTGRES_DB}
+user: ${env:AZURE_POSTGRES_USER}
+password: ${secret:azure-postgres-password}
+pool_size: 5
+health_check_query: "SELECT 1"
+extra:
+  provider: azure_postgres
+  port: 5432
+  ssl_mode: require

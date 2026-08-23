@@ -61,6 +61,9 @@ def _load_connectors(connectors_dir: Path) -> list[ConnectorConfig]:
         data = _load_yaml(connector_yaml)
         known = {field for field in ConnectorConfig.model_fields}
         extra = {k: v for k, v in data.items() if k not in known}
+        schema_yaml = connector_dir / "schema.yaml"
+        if schema_yaml.exists():
+            extra["schema"] = _load_yaml(schema_yaml)
         payload = {k: v for k, v in data.items() if k in known}
         payload["extra"] = extra
         configs.append(ConnectorConfig(**payload))

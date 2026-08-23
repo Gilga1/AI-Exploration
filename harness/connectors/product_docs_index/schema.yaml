@@ -1,0 +1,18 @@
+kind: vector_index
+provider: azure_ai_search
+embedding_model: primary_reasoner
+fields:
+  - name: doc_id
+    type: string
+    description: Source document identifier.
+  - name: product_line
+    type: string
+    filterable: true
+    description: "One of: retirement, wealth, institutional."
+  - name: last_updated
+    type: date
+    filterable: true
+    description: Used to prefer recent docs when filtering.
+  - name: content
+    type: text
+    description: The embedded chunk text itself.

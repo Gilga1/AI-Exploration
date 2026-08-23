@@ -1,0 +1,12 @@
+name: analytics_snowflake
+kind: snowflake
+database: ${env:SNOWFLAKE_DATABASE}
+user: ${env:SNOWFLAKE_USER}
+password: ${secret:snowflake-password}
+pool_size: 3
+health_check_query: "SELECT 1"
+extra:
+  account: ${env:SNOWFLAKE_ACCOUNT}
+  warehouse: ${env:SNOWFLAKE_WAREHOUSE}
+  schema: PUBLIC
+  role: ${env:SNOWFLAKE_ROLE}

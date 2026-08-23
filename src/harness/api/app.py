@@ -21,9 +21,14 @@ def get_bootstrap_state() -> BootstrapState:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     global _state
+    from dotenv import load_dotenv
+
+    load_dotenv()
     settings: HarnessSettings = app.state.settings
     _state = await bootstrap(settings)
     yield
+    if _state is not None:
+        _state.telemetry.flush_otel()
     _state = None
 
 
@@ -48,6 +53,7 @@ def create_app(settings: HarnessSettings | None = None) -> FastAPI:
             "connectors": [connector.name for connector in state.config.connectors],
         }
         payload["routing_index_size"] = len(state.capability_index)
+        payload["langfuse_enabled"] = state.telemetry.langfuse_enabled
         return payload
 
     @app.get("/admin/events")

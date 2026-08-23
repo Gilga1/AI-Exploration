@@ -12,6 +12,7 @@ from harness.core.request import IncomingRequest, OrchestratorResult, ResumeRequ
 from harness.hitl.store import ApprovalStore
 from harness.memory.artifacts import ArtifactStore
 from harness.memory.manager import MemoryManager
+from harness.registry.data_sources import DataSourceRegistry
 from harness.registry.registry import ToolRegistry
 from harness.routing.decision import RoutingDecision
 from harness.routing.router import TieredRouter
@@ -45,6 +46,7 @@ class Orchestrator:
         telemetry: TelemetryBus,
         settings: HarnessSettings,
         approval_store: ApprovalStore | None = None,
+        connector_registry: DataSourceRegistry | None = None,
     ) -> None:
         self.registry = registry
         self.router = router
@@ -52,6 +54,7 @@ class Orchestrator:
         self.telemetry = telemetry
         self.settings = settings
         self.approval_store = approval_store
+        self.connector_registry = connector_registry
         self.graph = self._compile_graph()
 
     def _compile_graph(self):
@@ -222,6 +225,7 @@ class Orchestrator:
         context = RunContext(
             trace_id=state["trace_id"],
             tools=self.registry.tools,
+            connectors=self.connector_registry.connectors if self.connector_registry else {},
             artifacts=artifacts,
             thread_id=state["thread_id"],
             metadata={

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from harness.core.protocols import BaseTool
+    from harness.core.protocols import BaseDataConnector, BaseTool
     from harness.memory.artifacts import ArtifactStore
     from harness.memory.manager import MemoryManager
 
@@ -15,6 +15,7 @@ class RunContext:
 
     trace_id: str
     tools: dict[str, BaseTool] = field(default_factory=dict)
+    connectors: dict[str, BaseDataConnector] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
     thread_id: str | None = None
     memory: MemoryManager | None = None

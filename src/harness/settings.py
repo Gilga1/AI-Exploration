@@ -39,6 +39,7 @@ class HarnessSettings(BaseSettings):
     episodic_db_path: str = "data/harness_episodic.db"
     approvals_db_path: str = "data/harness_approvals.db"
     force_stub_models: bool = False
+    langfuse_enabled: bool = True
     mcp_enabled: bool = True
     host: str = "0.0.0.0"
     port: int = 8000

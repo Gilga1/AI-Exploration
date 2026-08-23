@@ -6,8 +6,8 @@ from pathlib import Path
 
 from harness.agents.loader import load_yaml_agents
 from harness.bootstrap.state import BootstrapState
-from harness.config.connectors import YamlBackedConnector
 from harness.config.loader import load_config_plane
+from harness.connectors.factory import build_connector
 from harness.core.errors import BootstrapValidationError
 from harness.core.models import ExecutionMode
 from harness.hitl.store import ApprovalStore
@@ -120,7 +120,7 @@ async def bootstrap(settings: HarnessSettings | None = None) -> BootstrapState:
     bind_registries(tool_registry, connector_registry)
 
     for connector_config in config.connectors:
-        connector_registry.register_connector(YamlBackedConnector(connector_config))
+        connector_registry.register_connector(build_connector(connector_config))
 
     imported = discover_packages(settings)
     telemetry = TelemetryBus(
@@ -128,6 +128,7 @@ async def bootstrap(settings: HarnessSettings | None = None) -> BootstrapState:
         enable_otel=settings.telemetry_enable_otel,
         enable_ledger=settings.telemetry_enable_ledger,
         ledger_db_path=settings.telemetry_ledger_db_path,
+        langfuse_enabled=settings.langfuse_enabled,
     )
     approval_store = ApprovalStore(settings.approvals_db_path)
     memory = MemoryManager(
@@ -164,6 +165,7 @@ async def bootstrap(settings: HarnessSettings | None = None) -> BootstrapState:
         telemetry,
         settings,
         approval_store=approval_store,
+        connector_registry=connector_registry,
     )
 
     return BootstrapState(

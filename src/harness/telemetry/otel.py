@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Any, Iterator
 
 from opentelemetry import trace
@@ -11,16 +13,81 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.trace import Span, Status, StatusCode
 
 
-class OtelTracer:
-    """OTel tracer using GenAI semantic conventions."""
+@dataclass
+class LangfuseConfig:
+    public_key: str
+    secret_key: str
+    base_url: str = "https://cloud.langfuse.com"
 
-    def __init__(self, service_name: str = "agent-harness") -> None:
+
+def resolve_langfuse_config() -> LangfuseConfig | None:
+    public_key = (
+        os.environ.get("LANGFUSE_PUBLIC_KEY")
+        or os.environ.get("HARNESS_SECRET_LANGFUSE_PUBLIC_KEY")
+        or os.environ.get("HARNESS_LANGFUSE_PUBLIC_KEY")
+    )
+    secret_key = (
+        os.environ.get("LANGFUSE_SECRET_KEY")
+        or os.environ.get("HARNESS_SECRET_LANGFUSE_SECRET_KEY")
+        or os.environ.get("HARNESS_LANGFUSE_SECRET_KEY")
+    )
+    if not public_key or not secret_key:
+        return None
+    base_url = (
+        os.environ.get("LANGFUSE_BASE_URL")
+        or os.environ.get("HARNESS_LANGFUSE_BASE_URL")
+        or "https://cloud.langfuse.com"
+    )
+    return LangfuseConfig(public_key=public_key, secret_key=secret_key, base_url=base_url.rstrip("/"))
+
+
+class OtelTracer:
+    """OTel tracer using GenAI semantic conventions with optional Langfuse export."""
+
+    def __init__(
+        self,
+        service_name: str = "agent-harness",
+        *,
+        langfuse: LangfuseConfig | None = None,
+    ) -> None:
         resource = Resource.create({"service.name": service_name})
         provider = TracerProvider(resource=resource)
         self._exporter = InMemorySpanExporter()
         provider.add_span_processor(SimpleSpanProcessor(self._exporter))
+
+        self._langfuse_client = None
+        if langfuse is not None:
+            self._langfuse_client = self._setup_langfuse(provider, langfuse)
+
         trace.set_tracer_provider(provider)
         self._tracer = trace.get_tracer("harness")
+        self._langfuse_config = langfuse
+
+    def _setup_langfuse(self, provider: TracerProvider, config: LangfuseConfig) -> Any:
+        from langfuse import Langfuse
+        from langfuse._client.span_processor import LangfuseSpanProcessor
+
+        provider.add_span_processor(
+            LangfuseSpanProcessor(
+                public_key=config.public_key,
+                secret_key=config.secret_key,
+                base_url=config.base_url,
+            )
+        )
+        return Langfuse(
+            public_key=config.public_key,
+            secret_key=config.secret_key,
+            base_url=config.base_url,
+            tracer_provider=provider,
+        )
+
+    @property
+    def langfuse_enabled(self) -> bool:
+        return self._langfuse_config is not None
+
+    def flush(self) -> None:
+        if self._langfuse_client is not None:
+            self._langfuse_client.flush()
 
     @contextmanager
     def span(
@@ -51,73 +118,3 @@ class OtelTracer:
             }
             for span in spans
         ]
-
-    def root_agent_span(
-        self,
-        *,
-        trace_id: str,
-        request_id: str,
-    ) -> Iterator[Span]:
-        return self.span(
-            "invoke_agent",
-            trace_id=trace_id,
-            attributes={
-                "gen_ai.operation.name": "invoke_agent",
-                "harness.request_id": request_id,
-            },
-        )
-
-    def routing_span(self, *, trace_id: str) -> Iterator[Span]:
-        return self.span(
-            "harness.routing",
-            trace_id=trace_id,
-            attributes={"harness.operation": "routing"},
-        )
-
-    def agent_span(self, *, trace_id: str, agent_id: str, agent_name: str) -> Iterator[Span]:
-        return self.span(
-            "invoke_agent",
-            trace_id=trace_id,
-            attributes={
-                "gen_ai.operation.name": "invoke_agent",
-                "gen_ai.agent.id": agent_id,
-                "gen_ai.agent.name": agent_name,
-            },
-        )
-
-    def tool_span(self, *, trace_id: str, tool_name: str) -> Iterator[Span]:
-        return self.span(
-            "execute_tool",
-            trace_id=trace_id,
-            attributes={
-                "gen_ai.operation.name": "execute_tool",
-                "gen_ai.tool.name": tool_name,
-            },
-        )
-
-    def memory_span(
-        self,
-        *,
-        trace_id: str,
-        tier: str,
-        operation: str,
-        namespace: tuple[str, ...],
-    ) -> Iterator[Span]:
-        return self.span(
-            "harness.memory.op",
-            trace_id=trace_id,
-            attributes={
-                "harness.memory.tier": tier,
-                "harness.memory.operation": operation,
-                "harness.memory.namespace": ".".join(namespace),
-            },
-        )
-
-    def handoff_span(self, *, trace_id: str, child_task_id: str) -> Iterator[Span]:
-        return self.span(
-            "harness.handoff",
-            trace_id=trace_id,
-            attributes={
-                "harness.handoff.child_task_id": child_task_id,
-            },
-        )

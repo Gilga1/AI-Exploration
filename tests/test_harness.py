@@ -22,6 +22,7 @@ def _harness_settings(**kwargs) -> HarnessSettings:
         scan_paths=["harness/tools", "harness/skills"],
         connector_health_check=False,
         force_stub_models=True,
+        langfuse_enabled=False,
     )
     defaults.update(kwargs)
     return HarnessSettings(**defaults)
@@ -265,6 +266,55 @@ async def test_admin_events_endpoint():
     body = events_resp.json()
     assert body["count"] >= 1
     assert any(e.get("event_type") == "handoff" for e in body["events"])
+
+
+@pytest.mark.asyncio
+async def test_connector_configs_load_from_harness():
+    config = load_config_plane("harness")
+    names = {c.name for c in config.connectors}
+    assert "sales_postgres" in names
+    assert "product_docs_index" in names
+    assert "analytics_snowflake" in names
+
+
+def test_connector_factory_postgres():
+    from harness.config.models import ConnectorConfig
+    from harness.connectors.factory import build_connector
+
+    connector = build_connector(
+        ConnectorConfig(
+            name="test_pg",
+            kind="postgres",
+            host="localhost",
+            database="db",
+            user="user",
+            password="pass",
+        )
+    )
+    assert connector.kind == "postgres"
+
+
+def test_langfuse_config_resolution(monkeypatch):
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-test")
+    from harness.telemetry.otel import resolve_langfuse_config
+
+    cfg = resolve_langfuse_config()
+    assert cfg is not None
+    assert cfg.public_key == "pk-test"
+
+
+@pytest.mark.asyncio
+async def test_run_context_includes_connectors():
+    settings = _harness_settings(scan_paths=["harness/tools"])
+    state = await bootstrap(settings)
+    result = await state.orchestrator.handle(
+        IncomingRequest(
+            message="Turn my meeting notes into a PDF.",
+            skill_input={"markdown": "# Notes", "title": "Sync"},
+        )
+    )
+    assert result.status == "success"
 
 
 def test_registry_collision():

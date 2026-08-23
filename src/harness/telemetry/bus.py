@@ -22,10 +22,16 @@ class TelemetryBus:
         enable_otel: bool = True,
         enable_ledger: bool = True,
         ledger_db_path: str = "data/harness_events.db",
+        langfuse_enabled: bool = True,
     ) -> None:
         self._events: list[TraceEventBase] = []
         self._content_sample_rate = content_sample_rate
-        self._otel = OtelTracer() if enable_otel else None
+        langfuse = None
+        if enable_otel and langfuse_enabled:
+            from harness.telemetry.otel import resolve_langfuse_config
+
+            langfuse = resolve_langfuse_config()
+        self._otel = OtelTracer(langfuse=langfuse) if enable_otel else None
         self._ledger = EventLedger(ledger_db_path) if enable_ledger else None
 
     @property
@@ -87,6 +93,14 @@ class TelemetryBus:
         if self._otel is None:
             return []
         return self._otel.export_spans()
+
+    def flush_otel(self) -> None:
+        if self._otel is not None:
+            self._otel.flush()
+
+    @property
+    def langfuse_enabled(self) -> bool:
+        return self._otel is not None and self._otel.langfuse_enabled
 
     def clear(self) -> None:
         self._events.clear()
