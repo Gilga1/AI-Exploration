@@ -31,6 +31,7 @@ dev = [
 
 [project.scripts]
 qwen-extract = "qwen_agentic_ft.cli:main"
+qwen-train = "qwen_agentic_ft.train.cli:main"
 
 [build-system]
 requires = ["setuptools>=68.0"]
