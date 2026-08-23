@@ -32,6 +32,9 @@ class HarnessSettings(BaseSettings):
     routing_clear_margin: float = 0.15
     routing_min_score: float = 0.2
     routing_use_llm: bool = False
+    telemetry_content_sample_rate: float = 0.0
+    telemetry_enable_otel: bool = True
+    telemetry_enable_ledger: bool = True
     host: str = "0.0.0.0"
     port: int = 8000
 

@@ -1,5 +1,5 @@
 {
-  "name": "Qwen Agentic FT",
+  "name": "AI Agent Harness",
   "user": "ubuntu",
   "build": {
     "dockerfile": "Dockerfile",

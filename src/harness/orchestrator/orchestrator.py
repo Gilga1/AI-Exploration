@@ -8,6 +8,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from harness.core.context import RunContext
+from harness.core.models import ExecutionBudget, HandoffPacket
 from harness.core.request import IncomingRequest, OrchestratorResult
 from harness.memory.artifacts import ArtifactStore
 from harness.memory.manager import MemoryManager
@@ -15,14 +16,17 @@ from harness.registry.registry import ToolRegistry
 from harness.routing.router import RoutingDecision, TieredRouter
 from harness.settings import HarnessSettings
 from harness.telemetry.bus import TelemetryBus
+from harness.telemetry.instrumentation import invoke_tool_with_telemetry
 
 
 class OrchestratorState(TypedDict, total=False):
     request: IncomingRequest
     trace_id: str
     thread_id: str
+    root_span_id: str
     routing: RoutingDecision
     skill_output: dict[str, Any]
+    agent_output: dict[str, Any]
     artifacts: list[dict[str, Any]]
     message: str
     status: str
@@ -49,6 +53,7 @@ class Orchestrator:
         graph: StateGraph = StateGraph(OrchestratorState)
         graph.add_node("route", self._route_node)
         graph.add_node("dispatch_skill", self._dispatch_skill_node)
+        graph.add_node("spawn_agent", self._spawn_agent_node)
         graph.add_node("respond_directly", self._respond_directly_node)
         graph.add_node("synthesize", self._synthesize_node)
 
@@ -58,11 +63,12 @@ class Orchestrator:
             self._route_branch,
             {
                 "skill": "dispatch_skill",
-                "agent": "respond_directly",
+                "agent": "spawn_agent",
                 "direct": "respond_directly",
             },
         )
         graph.add_edge("dispatch_skill", "synthesize")
+        graph.add_edge("spawn_agent", "synthesize")
         graph.add_edge("respond_directly", "synthesize")
         graph.add_edge("synthesize", END)
         return graph.compile(checkpointer=self.memory.working)
@@ -71,12 +77,25 @@ class Orchestrator:
         trace_id = uuid.uuid4().hex
         thread_id = request.thread_id or trace_id
         config = {"configurable": {"thread_id": thread_id}}
-        initial: OrchestratorState = {
-            "request": request,
-            "trace_id": trace_id,
-            "thread_id": thread_id,
-        }
-        final_state = await self.graph.ainvoke(initial, config=config)
+        root_span_id = self.telemetry.new_span_id()
+
+        with self.telemetry.span(
+            "invoke_agent",
+            trace_id=trace_id,
+            span_id=root_span_id,
+            otel_attributes={
+                "gen_ai.operation.name": "invoke_agent",
+                "harness.request_id": trace_id,
+            },
+        ):
+            initial: OrchestratorState = {
+                "request": request,
+                "trace_id": trace_id,
+                "thread_id": thread_id,
+                "root_span_id": root_span_id,
+            }
+            final_state = await self.graph.ainvoke(initial, config=config)
+
         return OrchestratorResult(
             trace_id=trace_id,
             thread_id=thread_id,
@@ -90,14 +109,23 @@ class Orchestrator:
             }
             if final_state.get("routing")
             else {},
-            output=final_state.get("skill_output"),
+            output=final_state.get("skill_output") or final_state.get("agent_output"),
             artifacts=final_state.get("artifacts", []),
-            events=self.telemetry.list_events(),
+            events=self.telemetry.list_events_for_trace(trace_id),
         )
 
     async def _route_node(self, state: OrchestratorState) -> OrchestratorState:
         request = state["request"]
-        routing = self.router.route(request.message, trace_id=state["trace_id"])
+        with self.telemetry.span(
+            "harness.routing",
+            trace_id=state["trace_id"],
+            otel_attributes={"harness.operation": "routing"},
+        ):
+            routing = self.router.route(
+                request.message,
+                trace_id=state["trace_id"],
+                parent_span_id=state.get("root_span_id"),
+            )
         return {"routing": routing}
 
     def _route_branch(self, state: OrchestratorState) -> str:
@@ -127,8 +155,17 @@ class Orchestrator:
             tools=self.registry.tools,
             artifacts=artifacts,
             thread_id=state["thread_id"],
+            metadata={
+                "telemetry": self.telemetry,
+                "parent_span_id": state.get("root_span_id"),
+            },
         )
-        result = await skill.execute(payload, context=context)
+        with self.telemetry.span(
+            f"skill:{routing.selected}",
+            trace_id=state["trace_id"],
+            otel_attributes={"harness.skill.name": routing.selected},
+        ):
+            result = await skill.execute(payload, context=context)
         output = result.model_dump() if hasattr(result, "model_dump") else dict(result)
         stored_artifacts = [
             {"url": ref["url"], "kind": ref["kind"], "metadata": ref.get("metadata", {})}
@@ -140,16 +177,66 @@ class Orchestrator:
             "status": "success",
         }
 
-    async def _respond_directly_node(self, state: OrchestratorState) -> OrchestratorState:
+    async def _spawn_agent_node(self, state: OrchestratorState) -> OrchestratorState:
         routing = state["routing"]
-        if routing.kind == "agent":
+        request = state["request"]
+        agent = self.registry.agents.get(routing.selected)
+        if agent is None:
             return {
-                "status": "needs_agent_spawn",
-                "message": (
-                    f"Request routed to agent {routing.selected!r}, but agent spawning "
-                    "is not implemented until Phase 7."
-                ),
+                "status": "failure",
+                "error": f"Agent {routing.selected!r} not found",
+                "message": f"Could not spawn agent {routing.selected!r}.",
             }
+
+        task_id = uuid.uuid4().hex
+        packet = HandoffPacket(
+            task_id=task_id,
+            parent_trace_id=state["trace_id"],
+            objective=request.message,
+            context_summary=request.message[:500],
+            budget=ExecutionBudget(
+                max_steps=agent.manifest.max_steps,
+                max_tokens=agent.manifest.max_tokens_budget,
+                timeout_s=agent.manifest.timeout_s,
+            ),
+            memory_namespace=("agent", routing.selected, "default", "default"),
+        )
+
+        with self.telemetry.span(
+            f"invoke_agent:{routing.selected}",
+            trace_id=state["trace_id"],
+            otel_attributes={
+                "gen_ai.operation.name": "invoke_agent",
+                "gen_ai.agent.name": routing.selected,
+            },
+        ):
+            agent_result = await agent.run(packet)
+
+        if agent_result.status == "budget_exceeded":
+            return {
+                "status": "budget_exceeded",
+                "message": f"Agent {routing.selected!r} exceeded its execution budget.",
+                "agent_output": agent_result.output,
+            }
+        if agent_result.status == "failure":
+            return {
+                "status": "failure",
+                "message": agent_result.trace_summary or f"Agent {routing.selected!r} failed.",
+                "agent_output": agent_result.output,
+            }
+
+        artifacts = [
+            {"url": ref.url, "kind": ref.kind, "metadata": ref.metadata}
+            for ref in agent_result.artifacts
+        ]
+        return {
+            "status": "success",
+            "agent_output": agent_result.output,
+            "artifacts": artifacts,
+            "message": _format_agent_message(routing.selected, agent_result.output),
+        }
+
+    async def _respond_directly_node(self, state: OrchestratorState) -> OrchestratorState:
         return {
             "status": "success",
             "message": "No matching skill found. Please rephrase or provide structured skill_input.",
@@ -183,3 +270,16 @@ def _infer_skill_input(skill_name: str, message: str) -> dict[str, Any]:
             payload["title"] = title_match.group(1).strip()
         return payload
     return {"message": message}
+
+
+def _format_agent_message(agent_name: str, output: dict[str, Any] | None) -> str:
+    if not output:
+        return f"Agent {agent_name} completed."
+    if "positioning_summary" in output:
+        return (
+            f"Completed {agent_name} for {output.get('competitor', 'competitor')}: "
+            f"{output['positioning_summary']}"
+        )
+    if "response" in output:
+        return str(output["response"])
+    return f"Agent {agent_name} completed with results."

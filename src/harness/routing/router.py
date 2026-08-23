@@ -25,7 +25,7 @@ class TieredRouter:
         self._settings = settings
         self._telemetry = telemetry
 
-    def route(self, message: str, *, trace_id: str) -> RoutingDecision:
+    def route(self, message: str, *, trace_id: str, parent_span_id: str | None = None) -> RoutingDecision:
         candidates = self._index.search(message, k=self._settings.routing_top_k)
         if not candidates:
             decision = RoutingDecision(
@@ -35,7 +35,7 @@ class TieredRouter:
                 rationale="No routable capabilities registered",
                 candidates=[],
             )
-            self._emit(trace_id, decision)
+            self._emit(trace_id, decision, parent_span_id)
             return decision
 
         top = candidates[0]
@@ -54,12 +54,12 @@ class TieredRouter:
                 rationale=rationale,
                 candidates=candidates,
             )
-            self._emit(trace_id, decision)
+            self._emit(trace_id, decision, parent_span_id)
             return decision
 
         if self._settings.routing_use_llm:
             decision = self._llm_disambiguate(message, candidates, trace_id)
-            self._emit(trace_id, decision)
+            self._emit(trace_id, decision, parent_span_id)
             return decision
 
         decision = RoutingDecision(
@@ -69,7 +69,7 @@ class TieredRouter:
             rationale=f"Ambiguous routing; defaulting to top candidate {top.name!r}",
             candidates=candidates,
         )
-        self._emit(trace_id, decision)
+        self._emit(trace_id, decision, parent_span_id)
         return decision
 
     def _llm_disambiguate(
@@ -100,11 +100,12 @@ class TieredRouter:
             used_llm=True,
         )
 
-    def _emit(self, trace_id: str, decision: RoutingDecision) -> None:
+    def _emit(self, trace_id: str, decision: RoutingDecision, parent_span_id: str | None = None) -> None:
         self._telemetry.emit(
             RoutingDecisionEvent(
                 trace_id=trace_id,
                 span_id=self._telemetry.new_span_id(),
+                parent_span_id=parent_span_id,
                 candidates=[
                     {"name": c.name, "kind": c.kind, "score": c.score} for c in decision.candidates
                 ],

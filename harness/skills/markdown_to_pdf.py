@@ -4,6 +4,7 @@ from harness.core.context import RunContext
 from harness.core.models import SkillManifest
 from harness.core.protocols import BaseSkill
 from harness.registry import register_skill
+from harness.telemetry.instrumentation import invoke_tool_with_telemetry
 
 
 class MdToPdfInput(BaseModel):
@@ -38,9 +39,12 @@ class MarkdownToPdfSkill(BaseSkill):
     async def execute(self, payload: MdToPdfInput, *, context: RunContext) -> MdToPdfOutput:
         html = markdown_to_html(payload.markdown, payload.title)
         tool = context.tools["render_pdf_from_html"]
-        pdf_result = await tool.run(
+        pdf_result = await invoke_tool_with_telemetry(
+            "render_pdf_from_html",
+            tool,
             tool.spec.input_schema(html=html, title=payload.title),
             context=context,
+            rationale="Render markdown HTML to PDF bytes",
         )
         ref = await context.store_artifact(pdf_result.pdf_bytes, kind="pdf", metadata={"pages": pdf_result.page_count})
         return MdToPdfOutput(artifact_url=ref["url"], page_count=pdf_result.page_count)

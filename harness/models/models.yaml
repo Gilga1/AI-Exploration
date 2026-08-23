@@ -1,4 +1,8 @@
 models:
+  - name: test_stub
+    provider: stub
+    model: fake
+    max_tokens: 1024
   - name: fast_router
     provider: anthropic
     model: claude-haiku-4-5-20251001

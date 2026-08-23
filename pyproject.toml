@@ -1,34 +1,23 @@
 [project]
-name = "qwen-agentic-ft"
-version = "0.1.0"
-description = "Fine-tune Qwen3.5-2B on LangChain/LangGraph/Deep Agents code patterns"
+name = "agent-harness"
+version = "0.2.0"
+description = "Plugin-based AI agent orchestration harness with tiered routing and sub-agent spawning"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "pyyaml>=6.0.2",
-    "tqdm>=4.66.0",
     "httpx>=0.27.0",
     "fastapi>=0.115.0",
     "uvicorn>=0.32.0",
     "pydantic-settings>=2.6.0",
     "langgraph>=0.2.0",
     "langchain-core>=0.3.0",
+    "deepagents>=0.7.0",
+    "opentelemetry-api>=1.27.0",
+    "opentelemetry-sdk>=1.27.0",
 ]
 
 [project.optional-dependencies]
-train = [
-    "unsloth",
-    "transformers>=5.0.0",
-    "trl>=0.15.0",
-    "peft>=0.14.0",
-    "datasets>=3.0.0",
-    "accelerate>=1.2.0",
-]
-agents = [
-    "langchain-core>=0.3.0",
-    "langgraph>=0.2.0",
-    "deepagents>=0.2.0",
-]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
@@ -37,7 +26,6 @@ dev = [
 ]
 
 [project.scripts]
-qwen-extract = "qwen_agentic_ft.cli:main"
 harness-serve = "harness.serve:main"
 
 [build-system]

@@ -1,0 +1,17 @@
+name: competitor_research
+description: Researches a named competitor and drafts a positioning brief.
+capability_tags:
+  - research
+  - competitive-intel
+system_prompt: |
+  You are a research analyst. Given a competitor name, gather public information
+  and produce a structured positioning brief.
+context_packs:
+  - sales_glossary
+allowed_tools:
+  - web_search
+  - render_pdf_from_html
+model_config_ref: test_stub
+max_steps: 20
+max_tokens_budget: 40000
+timeout_s: 120

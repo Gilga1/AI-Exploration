@@ -50,6 +50,16 @@ def create_app(settings: HarnessSettings | None = None) -> FastAPI:
         payload["routing_index_size"] = len(state.capability_index)
         return payload
 
+    @app.get("/admin/events")
+    async def admin_events(trace_id: str | None = None, limit: int = 100) -> dict:
+        state = get_bootstrap_state()
+        if trace_id:
+            events = state.telemetry.list_events_for_trace(trace_id)
+        else:
+            ledger = state.telemetry.ledger
+            events = ledger.list_recent(limit) if ledger is not None else state.telemetry.list_events()
+        return {"events": events, "count": len(events)}
+
     @app.post("/v1/handle", response_model=OrchestratorResult)
     async def handle_request(request: IncomingRequest) -> OrchestratorResult:
         state = get_bootstrap_state()

@@ -4,6 +4,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
+from harness.agents.loader import load_yaml_agents
 from harness.bootstrap.state import BootstrapState
 from harness.config.connectors import YamlBackedConnector
 from harness.config.loader import load_config_plane
@@ -120,6 +121,19 @@ async def bootstrap(settings: HarnessSettings | None = None) -> BootstrapState:
         connector_registry.register_connector(YamlBackedConnector(connector_config))
 
     imported = discover_packages(settings)
+    telemetry = TelemetryBus(
+        content_sample_rate=settings.telemetry_content_sample_rate,
+        enable_otel=settings.telemetry_enable_otel,
+        enable_ledger=settings.telemetry_enable_ledger,
+    )
+    yaml_agents = load_yaml_agents(
+        settings.config_root,
+        config,
+        tool_registry,
+        telemetry=telemetry,
+    )
+    imported.extend(yaml_agents)
+
     validate_registry(tool_registry, strict_sandbox=settings.strict_sandbox_validation)
 
     if settings.connector_health_check and connector_registry.connectors:
@@ -128,7 +142,6 @@ async def bootstrap(settings: HarnessSettings | None = None) -> BootstrapState:
     capability_index = _build_capability_index(tool_registry, config)
     reflective = next(iter(connector_registry.connectors.values()), None)
     memory = MemoryManager(reflective_conn=reflective)
-    telemetry = TelemetryBus()
     router = TieredRouter(capability_index, settings, telemetry)
     orchestrator = Orchestrator(tool_registry, router, memory, telemetry, settings)
 

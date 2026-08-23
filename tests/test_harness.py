@@ -59,6 +59,16 @@ async def test_bootstrap_discovers_echo_tool():
 
 
 @pytest.mark.asyncio
+async def test_bootstrap_loads_yaml_agents():
+    settings = HarnessSettings(
+        scan_paths=["harness/tools"],
+        connector_health_check=False,
+    )
+    state = await bootstrap(settings)
+    assert "competitor_research" in state.tool_registry.agents
+
+
+@pytest.mark.asyncio
 async def test_config_plane_loads_yaml():
     config = load_config_plane("harness")
     assert any(pack.name == "sales_glossary" for pack in config.context_packs)
@@ -88,6 +98,21 @@ async def test_capability_index_ranks_markdown_skill():
 
 
 @pytest.mark.asyncio
+async def test_capability_index_ranks_competitor_agent():
+    settings = HarnessSettings(
+        scan_paths=["harness/tools"],
+        connector_health_check=False,
+    )
+    state = await bootstrap(settings)
+    candidates = state.capability_index.search(
+        "Research our top competitor Acme Corp and write a positioning brief", k=3
+    )
+    assert candidates
+    assert candidates[0].name == "competitor_research"
+    assert candidates[0].kind == "agent"
+
+
+@pytest.mark.asyncio
 async def test_orchestrator_markdown_to_pdf_skill():
     settings = HarnessSettings(
         scan_paths=["harness/tools", "harness/skills"],
@@ -109,6 +134,44 @@ async def test_orchestrator_markdown_to_pdf_skill():
     assert "artifact_url" in result.output
     assert result.artifacts
     assert any(event.get("selected") == "markdown_to_pdf" for event in result.events)
+    assert any(event.get("event_type") == "tool" for event in result.events)
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_spawns_competitor_research_agent():
+    settings = HarnessSettings(
+        scan_paths=["harness/tools"],
+        connector_health_check=False,
+    )
+    state = await bootstrap(settings)
+    result = await state.orchestrator.handle(
+        IncomingRequest(
+            message="Research competitor Acme Corp and draft a positioning brief.",
+        )
+    )
+    assert result.status == "success"
+    assert result.route["selected"] == "competitor_research"
+    assert result.route["kind"] == "agent"
+    assert result.output is not None
+    assert result.output.get("competitor") == "Acme Corp"
+    assert "positioning_summary" in result.output
+    assert any(event.get("event_type") == "handoff" for event in result.events)
+    assert any(event.get("event_type") == "tool" for event in result.events)
+
+
+@pytest.mark.asyncio
+async def test_telemetry_ledger_lists_trace_events():
+    settings = HarnessSettings(
+        scan_paths=["harness/tools"],
+        connector_health_check=False,
+    )
+    state = await bootstrap(settings)
+    result = await state.orchestrator.handle(
+        IncomingRequest(message="Research competitor Beta Inc and draft a positioning brief.")
+    )
+    ledger_events = state.telemetry.list_events_for_trace(result.trace_id)
+    assert ledger_events
+    assert any(e.get("event_type") == "routing" for e in ledger_events)
 
 
 @pytest.mark.asyncio
@@ -131,6 +194,28 @@ async def test_handle_http_endpoint():
     assert response.status_code == 200
     body = response.json()
     assert body["route"]["selected"] == "markdown_to_pdf"
+
+
+@pytest.mark.asyncio
+async def test_admin_events_endpoint():
+    settings = HarnessSettings(
+        scan_paths=["harness/tools"],
+        connector_health_check=False,
+    )
+    app = create_app(settings)
+    transport = ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            handle_resp = await client.post(
+                "/v1/handle",
+                json={"message": "Research competitor Gamma LLC and draft a positioning brief."},
+            )
+            trace_id = handle_resp.json()["trace_id"]
+            events_resp = await client.get(f"/admin/events?trace_id={trace_id}")
+    assert events_resp.status_code == 200
+    body = events_resp.json()
+    assert body["count"] >= 1
+    assert any(e.get("event_type") == "handoff" for e in body["events"])
 
 
 def test_registry_collision():
