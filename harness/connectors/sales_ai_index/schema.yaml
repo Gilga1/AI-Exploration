@@ -1,0 +1,115 @@
+kind: document_index
+provider: azure_ai_search
+description: Sales AI index with one document per Contact Global ID (ETL guarantees no duplicates).
+document_key_field: contact_global_id
+fields:
+  - name: contact_global_id
+    type: string
+    description: Primary document key.
+  - name: advisor_name
+    type: string
+  - name: firm_name
+    type: string
+  - name: territory
+    type: string
+collections:
+  DETAILS_FTSALES:
+    description: Sales transactions for the advisor.
+    date_field: Date
+    measure_fields:
+      - Sales in dollar
+    dimension_fields:
+      - Asset Class
+      - Product Vehicle
+      - Product Strategy
+      - Product Name
+    item_fields:
+      - name: Asset Class
+        type: string
+      - name: Product Vehicle
+        type: string
+      - name: Product Strategy
+        type: string
+      - name: Product Name
+        type: string
+      - name: Sales in dollar
+        type: number
+      - name: Date
+        type: date
+  Details_FTRED:
+    description: Redemption transactions.
+    date_field: Date
+    measure_fields:
+      - Sales in dollar
+    dimension_fields:
+      - Asset Class
+      - Product Vehicle
+      - Product Strategy
+      - Product Name
+    item_fields:
+      - name: Asset Class
+        type: string
+      - name: Product Vehicle
+        type: string
+      - name: Product Strategy
+        type: string
+      - name: Product Name
+        type: string
+      - name: Sales in dollar
+        type: number
+      - name: Date
+        type: date
+  Details_FTAUM:
+    description: Current AUM by product.
+    measure_fields:
+      - AUM
+    dimension_fields:
+      - Product Name
+      - Asset Class
+    item_fields:
+      - name: Product Name
+        type: string
+      - name: Asset Class
+        type: string
+      - name: AUM
+        type: number
+  Details_DST:
+    description: Office-level industry and market share metrics.
+    dimension_fields:
+      - Mstar_category
+    measure_fields:
+      - INDAUM
+      - FTAUM
+      - rolling_sales
+      - greenspace
+    item_fields:
+      - name: Mstar_category
+        type: string
+      - name: INDAUM
+        type: number
+      - name: FTAUM
+        type: number
+      - name: rolling_sales
+        type: number
+      - name: greenspace
+        type: number
+  Details_DP:
+    description: Advisor-level industry metrics (MS, UBS, LPL, Wells Fargo, Cetera only).
+    dimension_fields:
+      - Mstar_category
+    measure_fields:
+      - INDAUM
+      - FTAUM
+      - rolling_sales
+      - greenspace
+    item_fields:
+      - name: Mstar_category
+        type: string
+      - name: INDAUM
+        type: number
+      - name: FTAUM
+        type: number
+      - name: rolling_sales
+        type: number
+      - name: greenspace
+        type: number

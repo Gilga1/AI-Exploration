@@ -94,3 +94,44 @@ class AzureAISearchConnector:
         return await self.query(
             QuerySpec(filters={"query": query, "top": top, "filter": filter_expr}, limit=top)
         )
+
+    async def get_document(self, document_id: str, *, key_field: str | None = None) -> dict[str, Any] | None:
+        """Fetch a single document by key. Uses schema document_key_field when key_field is omitted."""
+        if self._client is None:
+            await self.connect()
+        assert self._client is not None
+
+        schema = self._config.extra.get("schema") or {}
+        resolved_key = key_field or schema.get("document_key_field") or "id"
+
+        def _get():
+            try:
+                return dict(self._client.get_document(key=document_id))
+            except Exception:
+                # Fallback: filter search when get_document key differs from stored field name
+                filter_expr = f"{resolved_key} eq '{document_id}'"
+                results = list(
+                    self._client.search(search_text="*", filter=filter_expr, top=1)
+                )
+                return dict(results[0]) if results else None
+
+        return await asyncio.to_thread(_get)
+
+    async def lookup(
+        self,
+        *,
+        search_text: str = "*",
+        filters: dict[str, str] | None = None,
+        top: int = 5,
+        filter_expr: str | None = None,
+    ) -> QueryResult:
+        """Entity resolution lookup with optional field equality filters."""
+        if filter_expr is None and filters:
+            parts = [f"{field} eq '{value}'" for field, value in filters.items() if value]
+            filter_expr = " and ".join(parts) if parts else None
+        return await self.query(
+            QuerySpec(
+                filters={"query": search_text, "top": top, "filter": filter_expr},
+                limit=top,
+            )
+        )

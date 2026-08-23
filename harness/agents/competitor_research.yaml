@@ -17,3 +17,17 @@ interrupt_tools:
 max_steps: 20
 max_tokens_budget: 40000
 timeout_s: 120
+config:
+  stub:
+    extract:
+      competitor: "(?:competitor[s]?\\s+(?:named\\s+)?['\"]?|research\\s+(?:our\\s+)?(?:top\\s+)?competitor\\s+['\"]?|research\\s+['\"]?)([A-Za-z0-9][A-Za-z0-9 ._-]*?)(?:\\s+and\\s+|\\s+for\\s+|[,.]|$)"
+    steps:
+      - tool: web_search
+        as: web_search
+        args:
+          query: "{{competitor}}"
+        rationale: Gather public competitor information
+    output:
+      competitor: "{{competitor}}"
+      positioning_summary: "{{steps.web_search.summary}}"
+      sources: "{{steps.web_search.sources}}"

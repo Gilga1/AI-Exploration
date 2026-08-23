@@ -100,7 +100,39 @@ $env:HARNESS_SECRET_AZURE_SEARCH_API_KEY = "..."
 pip install -r requirements-azure.txt
 ```
 
-### Snowflake
+### Sales AI analytics connectors
+
+| Connector | Purpose |
+|-----------|---------|
+| `advisor_guided_search` | Resolve advisor name + territory/email → `contact_global_id` |
+| `sales_ai_index` | One doc per Contact Global ID with nested collections (`DETAILS_FTSALES`, etc.) |
+
+Environment variables:
+
+```powershell
+$env:AZURE_SEARCH_ENDPOINT = "https://my-search.search.windows.net"
+$env:HARNESS_SECRET_AZURE_SEARCH_API_KEY = "..."
+$env:ADVISOR_GUIDED_SEARCH_INDEX = "advisor-guided-search"
+$env:SALES_AI_INDEX_NAME = "sales-ai"
+```
+
+### Generic analytics pipeline tools
+
+These tools are domain-agnostic — field names and connector names come from `schema.yaml` and agent YAML `config`:
+
+| Tool | Role |
+|------|------|
+| `index_lookup` | Entity resolution via configured lookup index |
+| `index_fetch_document` | Fetch one document by key |
+| `flatten_collection` | Explode nested arrays (e.g. `DETAILS_FTSALES`) |
+| `aggregate_data` | GROUP BY with configurable measures |
+| `compute_derived_metrics` | Wallet share, ratios, share-of-total |
+| `cohort_analysis` / `detect_anomalies` / `trend_forecast` | Generic EDA |
+| `render_output` | Output as table, narrative, **chart** (PNG artifact), or JSON |
+
+Wire them via `harness/agents/agentic_analyzer.yaml` — the harness core stays generic; sales specifics live in connector schemas and agent config.
+
+---
 
 `harness/connectors/analytics_snowflake/connector.yaml`:
 

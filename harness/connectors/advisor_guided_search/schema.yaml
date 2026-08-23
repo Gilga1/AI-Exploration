@@ -1,0 +1,33 @@
+kind: entity_resolution_index
+provider: azure_ai_search
+description: Guided search index for resolving advisor name + territory/email to Contact Global ID.
+document_key_field: contact_global_id
+lookup:
+  search_fields:
+    - advisor_name
+    - email
+    - territory
+  id_field: contact_global_id
+  display_fields:
+    - advisor_name
+    - email
+    - territory
+    - firm_name
+fields:
+  - name: contact_global_id
+    type: string
+    description: Canonical advisor identifier used across all Sales AI indexes.
+  - name: advisor_name
+    type: string
+    searchable: true
+    description: Full advisor name.
+  - name: email
+    type: string
+    searchable: true
+    filterable: true
+  - name: territory
+    type: string
+    filterable: true
+  - name: firm_name
+    type: string
+    filterable: true

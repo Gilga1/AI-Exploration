@@ -1,0 +1,11 @@
+name: sales_ai_index
+kind: azure_ai_search
+host: ${env:AZURE_SEARCH_ENDPOINT}
+database: sales-ai
+password: ${secret:azure-search-api-key}
+health_check_query: "ping"
+extra:
+  provider: azure_ai_search
+  endpoint: ${env:AZURE_SEARCH_ENDPOINT}
+  index_name: ${env:SALES_AI_INDEX_NAME}
+  api_key: ${secret:azure-search-api-key}

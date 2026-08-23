@@ -22,6 +22,7 @@ deepagents>=0.7.0
 # Tools & integrations
 firecrawl-py>=4.0.0
 fpdf2>=2.8.0
+matplotlib>=3.9.0
 
 # Data connectors
 asyncpg>=0.30.0

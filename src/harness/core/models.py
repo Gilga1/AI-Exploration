@@ -57,6 +57,10 @@ class AgentManifest(BaseModel):
         default_factory=list,
         description="Tool names requiring human approval when invoked by this agent",
     )
+    config: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Agent-specific configuration (connectors, defaults, stub behavior, output formats)",
+    )
 
 
 class ExecutionBudget(BaseModel):

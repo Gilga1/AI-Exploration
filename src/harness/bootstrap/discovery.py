@@ -148,6 +148,7 @@ async def bootstrap(settings: HarnessSettings | None = None) -> BootstrapState:
         approval_store=approval_store,
         force_stub_models=settings.force_stub_models,
         checkpointer=memory.working,
+        connectors=connector_registry.connectors,
     )
     imported.extend(yaml_agents)
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import re
+import json
 import time
 from typing import Any
 
@@ -9,6 +9,7 @@ from langchain.agents.middleware.human_in_the_loop import InterruptOnConfig
 from langchain_core.tools import StructuredTool
 from langgraph.types import Command
 
+from harness.agents.stub_runner import run_configured_stub
 from harness.config.models import ConfigPlane, ModelEndpointConfig
 from harness.core.context import RunContext
 from harness.core.models import AgentManifest, AgentResult, ExecutionBudget, HandoffPacket
@@ -34,6 +35,7 @@ class DeclarativeAgent(BaseAgent):
         approval_store: ApprovalStore | None = None,
         force_stub_models: bool = False,
         checkpointer: object | None = None,
+        connectors: dict[str, Any] | None = None,
     ) -> None:
         self.manifest = manifest
         self._config = config
@@ -42,6 +44,7 @@ class DeclarativeAgent(BaseAgent):
         self._approval_store = approval_store
         self._force_stub_models = force_stub_models
         self._checkpointer = checkpointer
+        self._connectors = connectors or {}
         self._compiled: object | None = None
 
     def compile(self, *, tool_registry: ToolRegistry, memory: object) -> object:
@@ -130,8 +133,13 @@ class DeclarativeAgent(BaseAgent):
         return result
 
     async def _run_stub(self, packet: HandoffPacket) -> AgentResult:
-        steps = 0
-        budget = packet.budget
+        stub_config = self.manifest.config.get("stub")
+        if not stub_config:
+            return AgentResult(
+                task_id=packet.task_id,
+                status="failure",
+                trace_summary=f"Agent {self.manifest.name} has no stub configuration",
+            )
 
         if self._telemetry:
             self._telemetry.emit(
@@ -139,41 +147,17 @@ class DeclarativeAgent(BaseAgent):
                     trace_id=packet.parent_trace_id,
                     span_id=self._telemetry.new_span_id(),
                     agent_name=self.manifest.name,
-                    thought=f"Starting research for: {packet.objective}",
+                    thought=f"Starting stub pipeline for: {packet.objective}",
                     capture_content=self._telemetry.should_capture_content(),
                 )
             )
 
-        competitor = _extract_competitor_name(packet.objective)
-        context = RunContext(
-            trace_id=packet.parent_trace_id,
-            thread_id=packet.task_id,
-            tools={
-                name: self._registry.tools[name]
-                for name in self.manifest.allowed_tools
-                if name in self._registry.tools
-            },
-            metadata={
-                "telemetry": self._telemetry,
-                "parent_span_id": self._telemetry.new_span_id() if self._telemetry else None,
-            },
+        context = self._build_run_context(packet)
+        output = await run_configured_stub(
+            stub_config=stub_config,
+            objective=packet.objective,
+            context=context,
         )
-
-        search_output: dict[str, Any] = {}
-        if "web_search" in context.tools:
-            steps += 1
-            if steps > budget.max_steps:
-                return AgentResult(
-                    task_id=packet.task_id,
-                    status="budget_exceeded",
-                    trace_summary="Step budget exceeded",
-                )
-            tool = context.tools["web_search"]
-            args = tool.spec.input_schema(query=competitor)
-            search_result = await invoke_tool_with_telemetry(
-                "web_search", tool, args, context=context, rationale="Gather public competitor information"
-            )
-            search_output = search_result.model_dump() if hasattr(search_result, "model_dump") else {}
 
         if self._telemetry:
             self._telemetry.emit(
@@ -188,16 +172,28 @@ class DeclarativeAgent(BaseAgent):
                 )
             )
 
-        brief = {
-            "competitor": competitor,
-            "positioning_summary": search_output.get("summary", f"Research brief for {competitor}"),
-            "sources": search_output.get("sources", []),
-        }
         return AgentResult(
             task_id=packet.task_id,
             status="success",
-            output=brief,
-            trace_summary=f"Completed competitor research for {competitor}",
+            output=output,
+            trace_summary=f"Completed stub pipeline for {self.manifest.name}",
+        )
+
+    def _build_run_context(self, packet: HandoffPacket) -> RunContext:
+        return RunContext(
+            trace_id=packet.parent_trace_id,
+            thread_id=packet.task_id,
+            tools={
+                name: self._registry.tools[name]
+                for name in self.manifest.allowed_tools
+                if name in self._registry.tools
+            },
+            connectors=self._connectors,
+            metadata={
+                "telemetry": self._telemetry,
+                "parent_span_id": self._telemetry.new_span_id() if self._telemetry else None,
+                "agent_config": self.manifest.config,
+            },
         )
 
     async def _run_deep_agent(
@@ -275,6 +271,9 @@ class DeclarativeAgent(BaseAgent):
                         parts.append(f"- {entry.get('term', '')}: {entry.get('definition', '')}")
                     for rule in pack.rules:
                         parts.append(f"Rule: {rule}")
+        if self.manifest.config:
+            parts.append("Agent configuration:")
+            parts.append(json.dumps(self.manifest.config, indent=2, default=str))
         return "\n".join(parts)
 
     def _build_interrupt_on(self, tool_registry: ToolRegistry) -> dict[str, InterruptOnConfig]:
@@ -304,7 +303,11 @@ class DeclarativeAgent(BaseAgent):
                     ctx = RunContext(
                         trace_id="agent-internal",
                         tools=tool_registry.tools,
-                        metadata={"telemetry": self._telemetry},
+                        connectors=self._connectors,
+                        metadata={
+                            "telemetry": self._telemetry,
+                            "agent_config": self.manifest.config,
+                        },
                     )
                     args = ht.spec.input_schema(**kwargs)
                     result = await invoke_tool_with_telemetry(name, ht, args, context=ctx)
@@ -334,16 +337,3 @@ def _serialize_interrupts(interrupts: Any) -> list[dict[str, Any]]:
         else:
             serialized.append({"value": str(item)})
     return serialized
-
-
-def _extract_competitor_name(objective: str) -> str:
-    patterns = [
-        r"competitor[s]?\s+(?:named\s+)?['\"]?([A-Za-z0-9][A-Za-z0-9 ._-]*?)(?:\s+and\s+|\s+for\s+|[,.]|$)",
-        r"research\s+(?:our\s+)?(?:top\s+)?competitor\s+['\"]?([A-Za-z0-9][A-Za-z0-9 ._-]*?)(?:\s+and\s+|[,.]|$)",
-        r"research\s+['\"]?([A-Za-z0-9][A-Za-z0-9 ._-]*?)(?:\s+and\s+|\s+for\s+|[,.]|$)",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, objective, re.I)
-        if match:
-            return match.group(1).strip().rstrip(".")
-    return "Unknown Competitor"

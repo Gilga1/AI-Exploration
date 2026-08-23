@@ -365,6 +365,11 @@ def _format_agent_message(agent_name: str, output: dict[str, Any] | None) -> str
             f"Completed {agent_name} for {output.get('competitor', 'competitor')}: "
             f"{output['positioning_summary']}"
         )
+    if "analysis_summary" in output:
+        return (
+            f"Completed {agent_name} for {output.get('advisor', 'advisor')}: "
+            f"{output['analysis_summary']}"
+        )
     if "response" in output:
         return str(output["response"])
     return f"Agent {agent_name} completed with results."

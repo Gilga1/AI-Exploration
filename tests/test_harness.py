@@ -77,6 +77,7 @@ async def test_bootstrap_loads_yaml_agents():
     )
     state = await bootstrap(settings)
     assert "competitor_research" in state.tool_registry.agents
+    assert "agentic_analyzer" in state.tool_registry.agents
 
 
 @pytest.mark.asyncio
@@ -275,6 +276,8 @@ async def test_connector_configs_load_from_harness():
     assert "sales_postgres" in names
     assert "product_docs_index" in names
     assert "analytics_snowflake" in names
+    assert "advisor_guided_search" in names
+    assert "sales_ai_index" in names
 
 
 def test_connector_factory_postgres():
@@ -336,3 +339,88 @@ def test_capability_index_scoring():
     index.add("echo", "skill", "Echoes a message back", ["utility"])
     results = index.search("meeting notes pdf", k=2)
     assert results[0].name == "markdown_to_pdf"
+
+
+def test_analytics_flatten_and_aggregate():
+    from harness.analytics.lib import aggregate_records, flatten_collection
+
+    document = {
+        "contact_global_id": "CG-1",
+        "DETAILS_FTSALES": [
+            {"Product Name": "Fund A", "Sales in dollar": 100, "Date": "2025-01-01"},
+            {"Product Name": "Fund B", "Sales in dollar": 200, "Date": "2025-02-01"},
+            {"Product Name": "Fund A", "Sales in dollar": 50, "Date": "2025-03-01"},
+        ],
+    }
+    rows = flatten_collection(document, "DETAILS_FTSALES", parent_fields=["contact_global_id"])
+    assert len(rows) == 3
+    aggregated = aggregate_records(
+        rows,
+        group_by=["Product Name"],
+        measures={"Sales in dollar": "sum"},
+        sort_by="Sales in dollar",
+    )
+    assert aggregated[0]["Product Name"] == "Fund B"
+    assert aggregated[0]["Sales in dollar"] == 200
+
+
+@pytest.mark.asyncio
+async def test_render_output_chart_artifact():
+    settings = _harness_settings(scan_paths=["harness/tools"])
+    state = await bootstrap(settings)
+    tool = state.tool_registry.tools["render_output"]
+    ctx = RunContext(trace_id="test", tools=state.tool_registry.tools)
+    result = await tool.run(
+        tool.spec.input_schema(
+            data=[
+                {"Product Name": "Alpha", "Sales in dollar": 100},
+                {"Product Name": "Beta", "Sales in dollar": 200},
+            ],
+            format="chart",
+            title="Sales Chart",
+            chart_config={
+                "x_field": "Product Name",
+                "y_field": "Sales in dollar",
+                "chart_type": "bar",
+            },
+        ),
+        context=ctx,
+    )
+    assert result.format == "chart"
+    assert result.artifact_url
+
+
+@pytest.mark.asyncio
+async def test_capability_index_ranks_agentic_analyzer():
+    settings = _harness_settings(
+        scan_paths=["harness/tools"],
+        connector_health_check=False,
+    )
+    state = await bootstrap(settings)
+    candidates = state.capability_index.search(
+        "Analyze advisor John Smith product sales last 6 months grouped by product name", k=3
+    )
+    assert candidates
+    assert candidates[0].name == "agentic_analyzer"
+    assert candidates[0].kind == "agent"
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_spawns_agentic_analyzer():
+    settings = _harness_settings(
+        scan_paths=["harness/tools"],
+        connector_health_check=False,
+    )
+    state = await bootstrap(settings)
+    result = await state.orchestrator.handle(
+        IncomingRequest(
+            message="Analyze advisor John Smith product sales grouped by product name.",
+        )
+    )
+    assert result.status == "success"
+    assert result.route["selected"] == "agentic_analyzer"
+    assert result.output is not None
+    assert result.output.get("contact_global_id") == "STUB-001"
+    assert result.output.get("rows")
+    assert any(event.get("event_type") == "handoff" for event in result.events)
+
