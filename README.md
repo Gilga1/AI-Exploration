@@ -1,4 +1,59 @@
-# Qwen Agentic Fine-Tuning
+# AI Exploration
+
+This repository contains two related projects:
+
+1. **AI Agent Harness** — plugin-based orchestration layer (Phase 1 scaffold)
+2. **Qwen Agentic Fine-Tuning** — data extraction pipeline for model training
+
+---
+
+## AI Agent Harness (Phase 1)
+
+Plugin-based agent harness where the core engine only knows interfaces. Concrete tools, skills, agents, and connectors self-register at import time via decorators.
+
+### Quick start
+
+```bash
+bash scripts/setup_env.sh
+source .venv/bin/activate
+
+# Run tests
+pytest -q
+
+# Start API server (health + /admin/capabilities)
+harness-serve
+```
+
+### Layout
+
+```
+src/harness/           # Core library (registry, bootstrap, API)
+harness/               # Plugin drop-zones (code plane)
+  tools/               # @register_tool implementations
+  skills/              # @register_skill implementations
+  agents/              # @register_agent implementations
+  connectors/          # @register_connector implementations
+harness.settings.yaml  # Scan paths and bootstrap config
+```
+
+### Adding a tool
+
+Drop a file in `harness/tools/`, restart the server:
+
+```python
+from harness.registry import register_tool
+
+@register_tool
+class MyTool:
+    spec = ToolSpec(...)
+    async def run(self, args, *, context): ...
+```
+
+Verify registration: `GET /admin/capabilities`
+
+---
+
+## Qwen Agentic Fine-Tuning
 
 Fine-tune **Qwen3.5-2B-Instruct** on LangChain / LangGraph / Deep Agents code patterns.
 

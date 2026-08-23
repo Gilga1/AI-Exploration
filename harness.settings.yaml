@@ -1,0 +1,11 @@
+name: AI Agent Harness
+scan_paths:
+  - harness/tools
+  - harness/skills
+  - harness/agents
+  - harness/connectors
+strict_sandbox_validation: true
+connector_health_check: false
+connector_fail_fast: false
+host: 0.0.0.0
+port: 8000
