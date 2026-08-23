@@ -1,0 +1,6 @@
+servers:
+  jira:
+    transport: stdio
+    command: "npx"
+    args: ["-y", "@yourorg/jira-mcp-server"]
+    enabled: false

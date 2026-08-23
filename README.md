@@ -7,7 +7,7 @@ This repository contains two related projects:
 
 ---
 
-## AI Agent Harness (Phase 1)
+## AI Agent Harness (Phases 1–4)
 
 Plugin-based agent harness where the core engine only knows interfaces. Concrete tools, skills, agents, and connectors self-register at import time via decorators.
 
@@ -20,36 +20,52 @@ source .venv/bin/activate
 # Run tests
 pytest -q
 
-# Start API server (health + /admin/capabilities)
+# Start API server
 harness-serve
+```
+
+### API
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /health` | Liveness |
+| `GET /admin/capabilities` | Registry + config plane introspection |
+| `POST /v1/handle` | Orchestrator — route and dispatch skills |
+
+Example:
+
+```bash
+curl -X POST http://localhost:8000/v1/handle \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"Turn my meeting notes into a PDF","skill_input":{"markdown":"# Notes\nHello","title":"Sync"}}'
 ```
 
 ### Layout
 
 ```
-src/harness/           # Core library (registry, bootstrap, API)
-harness/               # Plugin drop-zones (code plane)
-  tools/               # @register_tool implementations
-  skills/              # @register_skill implementations
-  agents/              # @register_agent implementations
-  connectors/          # @register_connector implementations
-harness.settings.yaml  # Scan paths and bootstrap config
+src/harness/           # Core library
+  config/              # YAML config plane loader (Phase 2)
+  memory/              # MemoryManager + artifacts (Phase 3)
+  routing/             # Capability index + tiered router (Phase 4)
+  orchestrator/        # LangGraph skill dispatch (Phase 4)
+  telemetry/           # RoutingDecisionEvent emission
+harness/               # Plugin + config drop-zones
+  tools/               # @register_tool
+  skills/              # @register_skill (e.g. markdown_to_pdf)
+  agents/              # @register_agent
+  connectors/          # connector.yaml per data source
+  context/             # business context packs
+  models/              # LLM endpoint registry
+  mcp/                 # MCP server registry
+harness.settings.yaml
 ```
 
-### Adding a tool
+### Phases implemented
 
-Drop a file in `harness/tools/`, restart the server:
-
-```python
-from harness.registry import register_tool
-
-@register_tool
-class MyTool:
-    spec = ToolSpec(...)
-    async def run(self, args, *, context): ...
-```
-
-Verify registration: `GET /admin/capabilities`
+- **Phase 1** — Core interfaces, registries, bootstrap discovery
+- **Phase 2** — YAML config plane, secret resolution, connector loading
+- **Phase 3** — MemoryManager (working/checkpointer), RunContext, request models
+- **Phase 4** — Tiered routing, LangGraph orchestrator, skill-only dispatch
 
 ---
 

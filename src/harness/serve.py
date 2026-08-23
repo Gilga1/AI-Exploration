@@ -9,7 +9,7 @@ from harness.settings import HarnessSettings
 
 
 def main() -> None:
-    settings = HarnessSettings()
+    settings = HarnessSettings.load()
     app = create_app(settings)
     uvicorn.run(app, host=settings.host, port=settings.port)
 

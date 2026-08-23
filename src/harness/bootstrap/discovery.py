@@ -4,16 +4,23 @@ import importlib.util
 import sys
 from pathlib import Path
 
+from harness.bootstrap.state import BootstrapState
+from harness.config.connectors import YamlBackedConnector
+from harness.config.loader import load_config_plane
 from harness.core.errors import BootstrapValidationError
 from harness.core.models import ExecutionMode
+from harness.memory.manager import MemoryManager
+from harness.orchestrator.orchestrator import Orchestrator
 from harness.registry.decorators import bind_registries
 from harness.registry.data_sources import DataSourceRegistry
 from harness.registry.registry import ToolRegistry
+from harness.routing.capability_index import CapabilityIndex
+from harness.routing.router import TieredRouter
 from harness.settings import HarnessSettings
+from harness.telemetry.bus import TelemetryBus
 
 
 def discover_packages(settings: HarnessSettings) -> list[str]:
-    """Import plugin modules from configured scan directories."""
     imported: list[str] = []
     for package_path in settings.scan_paths:
         path = Path(package_path)
@@ -33,11 +40,7 @@ def discover_packages(settings: HarnessSettings) -> list[str]:
     return imported
 
 
-def validate_registry(
-    registry: ToolRegistry,
-    *,
-    strict_sandbox: bool = True,
-) -> None:
+def validate_registry(registry: ToolRegistry, *, strict_sandbox: bool = True) -> None:
     errors: list[str] = []
 
     for tool in registry.tools.values():
@@ -77,13 +80,44 @@ def validate_registry(
         raise BootstrapValidationError(errors)
 
 
-async def bootstrap(
-    settings: HarnessSettings | None = None,
-) -> tuple[ToolRegistry, DataSourceRegistry, list[str]]:
-    settings = settings or HarnessSettings()
+def _build_capability_index(registry: ToolRegistry, config) -> CapabilityIndex:
+    index = CapabilityIndex()
+    for skill in registry.skills.values():
+        index.add(
+            skill.manifest.name,
+            "skill",
+            skill.manifest.description,
+            skill.manifest.capability_tags,
+        )
+    for agent in registry.agents.values():
+        index.add(
+            agent.manifest.name,
+            "agent",
+            agent.manifest.description,
+            agent.manifest.capability_tags,
+        )
+    for pack in config.context_packs:
+        if not pack.always_inject:
+            index.add(
+                pack.name,
+                "skill",
+                pack.description,
+                list(pack.scope.get("agent_tags", [])),
+            )
+    registry._capability_index = index
+    return index
+
+
+async def bootstrap(settings: HarnessSettings | None = None) -> BootstrapState:
+    settings = settings or HarnessSettings.load()
+    config = load_config_plane(settings.config_root)
+
     tool_registry = ToolRegistry()
     connector_registry = DataSourceRegistry()
     bind_registries(tool_registry, connector_registry)
+
+    for connector_config in config.connectors:
+        connector_registry.register_connector(YamlBackedConnector(connector_config))
 
     imported = discover_packages(settings)
     validate_registry(tool_registry, strict_sandbox=settings.strict_sandbox_validation)
@@ -91,8 +125,25 @@ async def bootstrap(
     if settings.connector_health_check and connector_registry.connectors:
         await connector_registry.health_check_all(fail_fast=settings.connector_fail_fast)
 
-    await tool_registry.build_capability_index()
-    return tool_registry, connector_registry, imported
+    capability_index = _build_capability_index(tool_registry, config)
+    reflective = next(iter(connector_registry.connectors.values()), None)
+    memory = MemoryManager(reflective_conn=reflective)
+    telemetry = TelemetryBus()
+    router = TieredRouter(capability_index, settings, telemetry)
+    orchestrator = Orchestrator(tool_registry, router, memory, telemetry, settings)
+
+    return BootstrapState(
+        settings=settings,
+        config=config,
+        tool_registry=tool_registry,
+        connector_registry=connector_registry,
+        capability_index=capability_index,
+        memory=memory,
+        telemetry=telemetry,
+        router=router,
+        orchestrator=orchestrator,
+        imported_modules=imported,
+    )
 
 
 def _module_name(py_file: Path) -> str:

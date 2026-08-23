@@ -5,41 +5,30 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 
-from harness.bootstrap import bootstrap
-from harness.registry.data_sources import DataSourceRegistry
-from harness.registry.registry import ToolRegistry
+from harness.bootstrap import BootstrapState, bootstrap
+from harness.core.request import IncomingRequest, OrchestratorResult
 from harness.settings import HarnessSettings
 
-_state: dict = {}
+_state: BootstrapState | None = None
 
 
-def get_tool_registry() -> ToolRegistry:
-    registry = _state.get("tool_registry")
-    if registry is None:
+def get_bootstrap_state() -> BootstrapState:
+    if _state is None:
         raise RuntimeError("Harness not bootstrapped")
-    return registry
-
-
-def get_connector_registry() -> DataSourceRegistry:
-    registry = _state.get("connector_registry")
-    if registry is None:
-        raise RuntimeError("Harness not bootstrapped")
-    return registry
+    return _state
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    global _state
     settings: HarnessSettings = app.state.settings
-    tool_registry, connector_registry, imported = await bootstrap(settings)
-    _state["tool_registry"] = tool_registry
-    _state["connector_registry"] = connector_registry
-    _state["imported_modules"] = imported
+    _state = await bootstrap(settings)
     yield
-    _state.clear()
+    _state = None
 
 
 def create_app(settings: HarnessSettings | None = None) -> FastAPI:
-    settings = settings or HarnessSettings()
+    settings = settings or HarnessSettings.load()
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.state.settings = settings
 
@@ -49,10 +38,21 @@ def create_app(settings: HarnessSettings | None = None) -> FastAPI:
 
     @app.get("/admin/capabilities")
     async def admin_capabilities() -> dict:
-        tool_registry = get_tool_registry()
-        connector_registry = get_connector_registry()
-        payload = tool_registry.introspection_payload(connector_registry)
-        payload["imported_modules"] = _state.get("imported_modules", [])
+        state = get_bootstrap_state()
+        payload = state.tool_registry.introspection_payload(state.connector_registry)
+        payload["imported_modules"] = state.imported_modules
+        payload["config"] = {
+            "context_packs": [pack.name for pack in state.config.context_packs],
+            "models": [model.name for model in state.config.models.models],
+            "mcp_servers": [server.name for server in state.config.mcp.servers if server.enabled],
+            "connectors": [connector.name for connector in state.config.connectors],
+        }
+        payload["routing_index_size"] = len(state.capability_index)
         return payload
+
+    @app.post("/v1/handle", response_model=OrchestratorResult)
+    async def handle_request(request: IncomingRequest) -> OrchestratorResult:
+        state = get_bootstrap_state()
+        return await state.orchestrator.handle(request)
 
     return app
