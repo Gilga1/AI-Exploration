@@ -10,6 +10,6 @@ models:
     api_key: ${secret:anthropic-api-key}
   - name: primary_reasoner
     provider: anthropic
-    model: claude-sonnet-5
+    model: claude-sonnet-4-20250514
     max_tokens: 8192
     api_key: ${secret:anthropic-api-key}

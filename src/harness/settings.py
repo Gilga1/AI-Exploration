@@ -35,6 +35,11 @@ class HarnessSettings(BaseSettings):
     telemetry_content_sample_rate: float = 0.0
     telemetry_enable_otel: bool = True
     telemetry_enable_ledger: bool = True
+    telemetry_ledger_db_path: str = "data/harness_events.db"
+    episodic_db_path: str = "data/harness_episodic.db"
+    approvals_db_path: str = "data/harness_approvals.db"
+    force_stub_models: bool = False
+    mcp_enabled: bool = True
     host: str = "0.0.0.0"
     port: int = 8000
 

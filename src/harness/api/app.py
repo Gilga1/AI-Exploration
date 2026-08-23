@@ -6,7 +6,7 @@ from typing import AsyncIterator
 from fastapi import FastAPI
 
 from harness.bootstrap import BootstrapState, bootstrap
-from harness.core.request import IncomingRequest, OrchestratorResult
+from harness.core.request import IncomingRequest, OrchestratorResult, ResumeRequest
 from harness.settings import HarnessSettings
 
 _state: BootstrapState | None = None
@@ -60,9 +60,20 @@ def create_app(settings: HarnessSettings | None = None) -> FastAPI:
             events = ledger.list_recent(limit) if ledger is not None else state.telemetry.list_events()
         return {"events": events, "count": len(events)}
 
+    @app.get("/admin/approvals")
+    async def admin_approvals(limit: int = 50) -> dict:
+        state = get_bootstrap_state()
+        pending = state.approval_store.list_pending(limit=limit)
+        return {"pending": pending, "count": len(pending)}
+
     @app.post("/v1/handle", response_model=OrchestratorResult)
     async def handle_request(request: IncomingRequest) -> OrchestratorResult:
         state = get_bootstrap_state()
         return await state.orchestrator.handle(request)
+
+    @app.post("/v1/resume", response_model=OrchestratorResult)
+    async def resume_request(request: ResumeRequest) -> OrchestratorResult:
+        state = get_bootstrap_state()
+        return await state.orchestrator.resume(request)
 
     return app

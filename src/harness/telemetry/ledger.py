@@ -4,21 +4,24 @@ import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Iterator
 
 
 class EventLedger:
-    """In-memory SQLite ledger for waterfall UI and audit queries."""
+    """SQLite-backed event ledger for waterfall UI and audit queries."""
 
-    def __init__(self) -> None:
-        self._conn = sqlite3.connect(":memory:", check_same_thread=False)
+    def __init__(self, db_path: str = "data/harness_events.db") -> None:
+        self._path = Path(db_path)
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(str(self._path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._init_schema()
 
     def _init_schema(self) -> None:
         self._conn.execute(
             """
-            CREATE TABLE events (
+            CREATE TABLE IF NOT EXISTS events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 trace_id TEXT NOT NULL,
                 span_id TEXT NOT NULL,
@@ -30,8 +33,8 @@ class EventLedger:
             )
             """
         )
-        self._conn.execute("CREATE INDEX idx_events_trace ON events(trace_id)")
-        self._conn.execute("CREATE INDEX idx_events_span ON events(span_id)")
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_events_trace ON events(trace_id)")
+        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_events_span ON events(span_id)")
         self._conn.commit()
 
     def write(self, event: dict[str, Any]) -> None:

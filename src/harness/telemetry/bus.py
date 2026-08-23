@@ -21,11 +21,12 @@ class TelemetryBus:
         content_sample_rate: float = 0.0,
         enable_otel: bool = True,
         enable_ledger: bool = True,
+        ledger_db_path: str = "data/harness_events.db",
     ) -> None:
         self._events: list[TraceEventBase] = []
         self._content_sample_rate = content_sample_rate
         self._otel = OtelTracer() if enable_otel else None
-        self._ledger = EventLedger() if enable_ledger else None
+        self._ledger = EventLedger(ledger_db_path) if enable_ledger else None
 
     @property
     def ledger(self) -> EventLedger | None:

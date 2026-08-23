@@ -10,7 +10,9 @@ from harness.config.connectors import YamlBackedConnector
 from harness.config.loader import load_config_plane
 from harness.core.errors import BootstrapValidationError
 from harness.core.models import ExecutionMode
+from harness.hitl.store import ApprovalStore
 from harness.memory.manager import MemoryManager
+from harness.mcp.discovery import discover_mcp_tools
 from harness.orchestrator.orchestrator import Orchestrator
 from harness.registry.decorators import bind_registries
 from harness.registry.data_sources import DataSourceRegistry
@@ -125,12 +127,26 @@ async def bootstrap(settings: HarnessSettings | None = None) -> BootstrapState:
         content_sample_rate=settings.telemetry_content_sample_rate,
         enable_otel=settings.telemetry_enable_otel,
         enable_ledger=settings.telemetry_enable_ledger,
+        ledger_db_path=settings.telemetry_ledger_db_path,
     )
+    approval_store = ApprovalStore(settings.approvals_db_path)
+    memory = MemoryManager(
+        reflective_conn=next(iter(connector_registry.connectors.values()), None),
+        episodic_db_path=settings.episodic_db_path,
+    )
+
+    if settings.mcp_enabled:
+        mcp_loaded = await discover_mcp_tools(config.mcp, tool_registry)
+        imported.extend(mcp_loaded)
+
     yaml_agents = load_yaml_agents(
         settings.config_root,
         config,
         tool_registry,
         telemetry=telemetry,
+        approval_store=approval_store,
+        force_stub_models=settings.force_stub_models,
+        checkpointer=memory.working,
     )
     imported.extend(yaml_agents)
 
@@ -140,10 +156,15 @@ async def bootstrap(settings: HarnessSettings | None = None) -> BootstrapState:
         await connector_registry.health_check_all(fail_fast=settings.connector_fail_fast)
 
     capability_index = _build_capability_index(tool_registry, config)
-    reflective = next(iter(connector_registry.connectors.values()), None)
-    memory = MemoryManager(reflective_conn=reflective)
-    router = TieredRouter(capability_index, settings, telemetry)
-    orchestrator = Orchestrator(tool_registry, router, memory, telemetry, settings)
+    router = TieredRouter(capability_index, settings, telemetry, config=config)
+    orchestrator = Orchestrator(
+        tool_registry,
+        router,
+        memory,
+        telemetry,
+        settings,
+        approval_store=approval_store,
+    )
 
     return BootstrapState(
         settings=settings,
@@ -155,6 +176,7 @@ async def bootstrap(settings: HarnessSettings | None = None) -> BootstrapState:
         telemetry=telemetry,
         router=router,
         orchestrator=orchestrator,
+        approval_store=approval_store,
         imported_modules=imported,
     )
 

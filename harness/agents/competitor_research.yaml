@@ -11,7 +11,9 @@ context_packs:
 allowed_tools:
   - web_search
   - render_pdf_from_html
-model_config_ref: test_stub
+model_config_ref: primary_reasoner
+interrupt_tools:
+  - render_pdf_from_html
 max_steps: 20
 max_tokens_budget: 40000
 timeout_s: 120

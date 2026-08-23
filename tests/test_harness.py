@@ -17,6 +17,16 @@ from harness.routing.capability_index import CapabilityIndex
 from harness.settings import HarnessSettings
 
 
+def _harness_settings(**kwargs) -> HarnessSettings:
+    defaults = dict(
+        scan_paths=["harness/tools", "harness/skills"],
+        connector_health_check=False,
+        force_stub_models=True,
+    )
+    defaults.update(kwargs)
+    return HarnessSettings(**defaults)
+
+
 class InModel(BaseModel):
     value: str
 
@@ -52,7 +62,7 @@ class _DependentSkill(BaseSkill):
 
 @pytest.mark.asyncio
 async def test_bootstrap_discovers_echo_tool():
-    settings = HarnessSettings(scan_paths=["harness/tools"], connector_health_check=False)
+    settings = _harness_settings(scan_paths=["harness/tools"])
     state = await bootstrap(settings)
     assert "echo" in state.tool_registry.tools
     assert len(state.imported_modules) >= 1
@@ -60,7 +70,7 @@ async def test_bootstrap_discovers_echo_tool():
 
 @pytest.mark.asyncio
 async def test_bootstrap_loads_yaml_agents():
-    settings = HarnessSettings(
+    settings = _harness_settings(
         scan_paths=["harness/tools"],
         connector_health_check=False,
     )
@@ -85,7 +95,7 @@ def test_secret_resolution():
 
 @pytest.mark.asyncio
 async def test_capability_index_ranks_markdown_skill():
-    settings = HarnessSettings(
+    settings = _harness_settings(
         scan_paths=["harness/tools", "harness/skills"],
         connector_health_check=False,
     )
@@ -99,7 +109,7 @@ async def test_capability_index_ranks_markdown_skill():
 
 @pytest.mark.asyncio
 async def test_capability_index_ranks_competitor_agent():
-    settings = HarnessSettings(
+    settings = _harness_settings(
         scan_paths=["harness/tools"],
         connector_health_check=False,
     )
@@ -114,7 +124,7 @@ async def test_capability_index_ranks_competitor_agent():
 
 @pytest.mark.asyncio
 async def test_orchestrator_markdown_to_pdf_skill():
-    settings = HarnessSettings(
+    settings = _harness_settings(
         scan_paths=["harness/tools", "harness/skills"],
         connector_health_check=False,
     )
@@ -139,7 +149,7 @@ async def test_orchestrator_markdown_to_pdf_skill():
 
 @pytest.mark.asyncio
 async def test_orchestrator_spawns_competitor_research_agent():
-    settings = HarnessSettings(
+    settings = _harness_settings(
         scan_paths=["harness/tools"],
         connector_health_check=False,
     )
@@ -161,7 +171,7 @@ async def test_orchestrator_spawns_competitor_research_agent():
 
 @pytest.mark.asyncio
 async def test_telemetry_ledger_lists_trace_events():
-    settings = HarnessSettings(
+    settings = _harness_settings(
         scan_paths=["harness/tools"],
         connector_health_check=False,
     )
@@ -176,7 +186,7 @@ async def test_telemetry_ledger_lists_trace_events():
 
 @pytest.mark.asyncio
 async def test_handle_http_endpoint():
-    settings = HarnessSettings(
+    settings = _harness_settings(
         scan_paths=["harness/tools", "harness/skills"],
         connector_health_check=False,
     )
@@ -197,8 +207,47 @@ async def test_handle_http_endpoint():
 
 
 @pytest.mark.asyncio
+async def test_render_pdf_produces_valid_pdf():
+    settings = _harness_settings(scan_paths=["harness/tools"])
+    state = await bootstrap(settings)
+    tool = state.tool_registry.tools["render_pdf_from_html"]
+    ctx = RunContext(trace_id="test", tools=state.tool_registry.tools)
+    result = await tool.run(
+        tool.spec.input_schema(html="<p>Hello PDF</p>", title="Test"),
+        context=ctx,
+    )
+    assert result.pdf_bytes.startswith(b"%PDF")
+    assert result.page_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_web_search_stub_without_api_key(monkeypatch):
+    monkeypatch.delenv("HARNESS_SECRET_FIRECRAWL_API_KEY", raising=False)
+    monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
+    settings = _harness_settings(scan_paths=["harness/tools"])
+    state = await bootstrap(settings)
+    tool = state.tool_registry.tools["web_search"]
+    ctx = RunContext(trace_id="test", tools=state.tool_registry.tools)
+    result = await tool.run(tool.spec.input_schema(query="Acme Corp"), context=ctx)
+    assert result.summary
+    assert result.sources
+
+
+@pytest.mark.asyncio
+async def test_admin_approvals_endpoint():
+    settings = _harness_settings(scan_paths=["harness/tools"])
+    app = create_app(settings)
+    transport = ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/admin/approvals")
+    assert response.status_code == 200
+    assert "pending" in response.json()
+
+
+@pytest.mark.asyncio
 async def test_admin_events_endpoint():
-    settings = HarnessSettings(
+    settings = _harness_settings(
         scan_paths=["harness/tools"],
         connector_health_check=False,
     )

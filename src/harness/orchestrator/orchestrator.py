@@ -4,16 +4,17 @@ import re
 import uuid
 from typing import Any, TypedDict
 
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from harness.core.context import RunContext
 from harness.core.models import ExecutionBudget, HandoffPacket
-from harness.core.request import IncomingRequest, OrchestratorResult
+from harness.core.request import IncomingRequest, OrchestratorResult, ResumeRequest
+from harness.hitl.store import ApprovalStore
 from harness.memory.artifacts import ArtifactStore
 from harness.memory.manager import MemoryManager
 from harness.registry.registry import ToolRegistry
-from harness.routing.router import RoutingDecision, TieredRouter
+from harness.routing.decision import RoutingDecision
+from harness.routing.router import TieredRouter
 from harness.settings import HarnessSettings
 from harness.telemetry.bus import TelemetryBus
 from harness.telemetry.instrumentation import invoke_tool_with_telemetry
@@ -31,6 +32,8 @@ class OrchestratorState(TypedDict, total=False):
     message: str
     status: str
     error: str
+    task_id: str
+    interrupts: list[dict[str, Any]]
 
 
 class Orchestrator:
@@ -41,12 +44,14 @@ class Orchestrator:
         memory: MemoryManager,
         telemetry: TelemetryBus,
         settings: HarnessSettings,
+        approval_store: ApprovalStore | None = None,
     ) -> None:
         self.registry = registry
         self.router = router
         self.memory = memory
         self.telemetry = telemetry
         self.settings = settings
+        self.approval_store = approval_store
         self.graph = self._compile_graph()
 
     def _compile_graph(self):
@@ -112,6 +117,70 @@ class Orchestrator:
             output=final_state.get("skill_output") or final_state.get("agent_output"),
             artifacts=final_state.get("artifacts", []),
             events=self.telemetry.list_events_for_trace(trace_id),
+            task_id=final_state.get("task_id"),
+            interrupts=final_state.get("interrupts", []),
+        )
+
+    async def resume(self, request: ResumeRequest) -> OrchestratorResult:
+        approval = self.approval_store.get(request.task_id) if self.approval_store else None
+        if approval is None:
+            return OrchestratorResult(
+                trace_id=request.task_id,
+                thread_id=request.thread_id,
+                status="failure",
+                message=f"No pending approval for task {request.task_id!r}",
+            )
+
+        agent = self.registry.agents.get(approval.agent_name)
+        if agent is None:
+            return OrchestratorResult(
+                trace_id=approval.trace_id,
+                thread_id=request.thread_id,
+                status="failure",
+                message=f"Agent {approval.agent_name!r} not found",
+            )
+
+        from harness.core.models import ExecutionBudget, HandoffPacket
+
+        packet = HandoffPacket(
+            task_id=request.task_id,
+            parent_trace_id=approval.trace_id,
+            objective="",
+            context_summary="",
+            budget=ExecutionBudget(max_steps=25, max_tokens=60_000, timeout_s=120),
+            memory_namespace=("agent", approval.agent_name, "default", "default"),
+        )
+
+        with self.telemetry.span(
+            "resume_agent",
+            trace_id=approval.trace_id,
+            otel_attributes={"harness.operation": "hitl_resume"},
+        ):
+            agent_result = await agent.run(packet, resume_decisions=request.decisions)
+
+        if self.approval_store:
+            self.approval_store.resolve(request.task_id)
+
+        status = agent_result.status
+        message = agent_result.trace_summary or "Resumed agent execution"
+        if status == "awaiting_approval":
+            message = "Agent still awaiting additional approvals"
+        elif status == "success":
+            message = _format_agent_message(approval.agent_name, agent_result.output)
+
+        return OrchestratorResult(
+            trace_id=approval.trace_id,
+            thread_id=request.thread_id,
+            status=status,
+            message=message,
+            output=agent_result.output,
+            artifacts=[
+                {"url": ref.url, "kind": ref.kind, "metadata": ref.metadata}
+                for ref in agent_result.artifacts
+            ],
+            events=self.telemetry.list_events_for_trace(approval.trace_id),
+            task_id=request.task_id,
+            interrupts=agent_result.output.get("interrupts", []) if agent_result.output else [],
         )
 
     async def _route_node(self, state: OrchestratorState) -> OrchestratorState:
@@ -212,6 +281,18 @@ class Orchestrator:
         ):
             agent_result = await agent.run(packet)
 
+        if agent_result.status == "awaiting_approval":
+            interrupts = (agent_result.output or {}).get("interrupts", [])
+            return {
+                "status": "awaiting_approval",
+                "task_id": task_id,
+                "interrupts": interrupts,
+                "message": (
+                    f"Agent {routing.selected!r} paused — human approval required. "
+                    f"Resume via POST /v1/resume with task_id={task_id!r}."
+                ),
+                "agent_output": agent_result.output,
+            }
         if agent_result.status == "budget_exceeded":
             return {
                 "status": "budget_exceeded",

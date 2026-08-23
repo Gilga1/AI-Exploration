@@ -1,29 +1,25 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Literal
-
+from harness.config.models import ConfigPlane
 from harness.routing.capability_index import CapabilityIndex, RetrievalCandidate
+from harness.routing.decision import RoutingDecision
 from harness.settings import HarnessSettings
 from harness.telemetry.bus import TelemetryBus
 from harness.telemetry.events import RoutingDecisionEvent
 
 
-@dataclass
-class RoutingDecision:
-    selected: str
-    kind: Literal["skill", "agent", "direct"]
-    confidence: float
-    rationale: str
-    candidates: list[RetrievalCandidate]
-    used_llm: bool = False
-
-
 class TieredRouter:
-    def __init__(self, index: CapabilityIndex, settings: HarnessSettings, telemetry: TelemetryBus) -> None:
+    def __init__(
+        self,
+        index: CapabilityIndex,
+        settings: HarnessSettings,
+        telemetry: TelemetryBus,
+        config: ConfigPlane | None = None,
+    ) -> None:
         self._index = index
         self._settings = settings
         self._telemetry = telemetry
+        self._config = config
 
     def route(self, message: str, *, trace_id: str, parent_span_id: str | None = None) -> RoutingDecision:
         candidates = self._index.search(message, k=self._settings.routing_top_k)
@@ -57,8 +53,10 @@ class TieredRouter:
             self._emit(trace_id, decision, parent_span_id)
             return decision
 
-        if self._settings.routing_use_llm:
-            decision = self._llm_disambiguate(message, candidates, trace_id)
+        if self._settings.routing_use_llm and self._config is not None:
+            from harness.llm.router import LLMRouter
+
+            decision = LLMRouter(self._config).disambiguate(message, candidates, trace_id=trace_id)
             self._emit(trace_id, decision, parent_span_id)
             return decision
 
@@ -71,34 +69,6 @@ class TieredRouter:
         )
         self._emit(trace_id, decision, parent_span_id)
         return decision
-
-    def _llm_disambiguate(
-        self,
-        message: str,
-        candidates: list[RetrievalCandidate],
-        trace_id: str,
-    ) -> RoutingDecision:
-        # Phase 4 stub: keyword heuristic until model router is wired in Phase 5+.
-        message_lower = message.lower()
-        for candidate in candidates:
-            if candidate.name.replace("_", " ") in message_lower:
-                return RoutingDecision(
-                    selected=candidate.name,
-                    kind=candidate.kind,
-                    confidence=candidate.score,
-                    rationale=f"LLM stub matched keyword for {candidate.name!r}",
-                    candidates=candidates,
-                    used_llm=True,
-                )
-        top = candidates[0]
-        return RoutingDecision(
-            selected=top.name,
-            kind=top.kind,
-            confidence=top.score,
-            rationale="LLM stub defaulted to highest retrieval score",
-            candidates=candidates,
-            used_llm=True,
-        )
 
     def _emit(self, trace_id: str, decision: RoutingDecision, parent_span_id: str | None = None) -> None:
         self._telemetry.emit(

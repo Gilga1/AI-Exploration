@@ -1,6 +1,6 @@
 [project]
 name = "agent-harness"
-version = "0.2.0"
+version = "0.3.0"
 description = "Plugin-based AI agent orchestration harness with tiered routing and sub-agent spawning"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -12,7 +12,12 @@ dependencies = [
     "pydantic-settings>=2.6.0",
     "langgraph>=0.2.0",
     "langchain-core>=0.3.0",
+    "langchain-anthropic>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "langchain-mcp-adapters>=0.1.0",
     "deepagents>=0.7.0",
+    "firecrawl-py>=4.0.0",
+    "fpdf2>=2.8.0",
     "opentelemetry-api>=1.27.0",
     "opentelemetry-sdk>=1.27.0",
 ]

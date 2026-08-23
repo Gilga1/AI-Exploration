@@ -14,6 +14,18 @@ class IncomingRequest(BaseModel):
         default=None,
         description="Optional structured payload override for the routed skill",
     )
+    tool_approvals: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Pre-approved tool decisions keyed by tool name, e.g. {'render_pdf_from_html': {'type': 'approve'}}",
+    )
+
+
+class ResumeRequest(BaseModel):
+    task_id: str
+    thread_id: str
+    decisions: list[dict[str, Any]] = Field(
+        description="HITL decisions, e.g. [{'type': 'approve'}] or [{'type': 'reject', 'message': '...'}]"
+    )
 
 
 class OrchestratorResult(BaseModel):
@@ -25,3 +37,5 @@ class OrchestratorResult(BaseModel):
     output: dict[str, Any] | None = None
     artifacts: list[dict[str, Any]] = Field(default_factory=list)
     events: list[dict[str, Any]] = Field(default_factory=list)
+    task_id: str | None = None
+    interrupts: list[dict[str, Any]] = Field(default_factory=list)

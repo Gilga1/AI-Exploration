@@ -15,5 +15,10 @@ routing_use_llm: false
 telemetry_content_sample_rate: 0.0
 telemetry_enable_otel: true
 telemetry_enable_ledger: true
+telemetry_ledger_db_path: data/harness_events.db
+episodic_db_path: data/harness_episodic.db
+approvals_db_path: data/harness_approvals.db
+force_stub_models: false
+mcp_enabled: true
 host: 0.0.0.0
 port: 8000

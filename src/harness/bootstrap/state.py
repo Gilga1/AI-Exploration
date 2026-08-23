@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from harness.config.models import ConfigPlane
+from harness.hitl.store import ApprovalStore
 from harness.memory.manager import MemoryManager
 from harness.orchestrator.orchestrator import Orchestrator
 from harness.registry.data_sources import DataSourceRegistry
@@ -24,4 +25,5 @@ class BootstrapState:
     telemetry: TelemetryBus
     router: TieredRouter
     orchestrator: Orchestrator
+    approval_store: ApprovalStore
     imported_modules: list[str]

@@ -53,7 +53,10 @@ class AgentManifest(BaseModel):
     max_steps: int = 25
     max_tokens_budget: int = 60_000
     timeout_s: int = 120
-    memory_namespace_template: str = "agent:{agent_name}:{org_id}:{user_id}"
+    interrupt_tools: list[str] = Field(
+        default_factory=list,
+        description="Tool names requiring human approval when invoked by this agent",
+    )
 
 
 class ExecutionBudget(BaseModel):
@@ -92,7 +95,7 @@ class ArtifactRef(BaseModel):
 
 class AgentResult(BaseModel):
     task_id: str
-    status: Literal["success", "failure", "needs_clarification", "budget_exceeded"]
+    status: Literal["success", "failure", "needs_clarification", "budget_exceeded", "awaiting_approval"]
     output: dict[str, Any] | None = None
     artifacts: list[ArtifactRef] = Field(default_factory=list)
     proposed_memory_writes: list[MemoryItem] = Field(default_factory=list)

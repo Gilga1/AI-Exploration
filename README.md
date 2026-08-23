@@ -4,14 +4,16 @@ Plugin-based agent orchestration harness where the core engine only knows interf
 
 ## Quick start
 
+See **[SETUP.md](SETUP.md)** for full Windows/macOS/Linux setup, API keys, Firecrawl, HITL, and extension guides.
+
 ```bash
-bash scripts/setup_env.sh
-source .venv/bin/activate
+bash scripts/setup_env.sh          # macOS/Linux
+# or: .\scripts\setup.ps1          # Windows PowerShell
 
-# Run tests
+source .venv/bin/activate          # macOS/Linux
+# or: .\.venv\Scripts\Activate.ps1 # Windows
+
 pytest -q
-
-# Start API server
 harness-serve
 ```
 
@@ -61,6 +63,7 @@ harness.settings.yaml
 - **Phase 4** — Tiered routing, LangGraph orchestrator, skill dispatch
 - **Phase 5** — OTel GenAI spans, event ledger, operational vs content-capture sampling
 - **Phase 7** — Sub-agent spawning via DeclarativeAgent + HandoffPacket/AgentResult
+- **Production integrations** — Anthropic/OpenAI LLM, Firecrawl search, fpdf2 PDF, HITL resume, MCP bootstrap, SQLite persistence
 
 ## Related project
 

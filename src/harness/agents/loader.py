@@ -16,6 +16,9 @@ def load_yaml_agents(
     config: ConfigPlane,
     registry: ToolRegistry,
     telemetry: object | None = None,
+    approval_store: object | None = None,
+    force_stub_models: bool = False,
+    checkpointer: object | None = None,
 ) -> list[str]:
     """Load declarative agents from harness/agents/*.yaml."""
     agents_dir = Path(config_root) / "agents"
@@ -31,6 +34,9 @@ def load_yaml_agents(
             config=config,
             registry=registry,
             telemetry=telemetry,
+            approval_store=approval_store,
+            force_stub_models=force_stub_models,
+            checkpointer=checkpointer,
         )
         registry.register_agent(agent)
         loaded.append(str(yaml_file))
