@@ -1,0 +1,15 @@
+models:
+  - name: test_stub
+    provider: stub
+    model: fake
+    max_tokens: 1024
+  - name: fast_router
+    provider: anthropic
+    model: claude-haiku-4-5-20251001
+    max_tokens: 1024
+    api_key: ${secret:anthropic-api-key}
+  - name: primary_reasoner
+    provider: anthropic
+    model: claude-sonnet-4-20250514
+    max_tokens: 8192
+    api_key: ${secret:anthropic-api-key}

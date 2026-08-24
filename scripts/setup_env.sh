@@ -11,8 +11,6 @@ pip install --upgrade pip setuptools wheel
 pip install -e ".[dev]"
 
 echo ""
-echo "Base extraction dependencies installed."
-echo "For training on a CUDA machine, also run:"
-echo "  pip install -e '.[train]'"
-echo "For agent-stack validation:"
-echo "  pip install -e '.[agents]'"
+echo "Agent Harness dependencies installed."
+echo "Run tests:  pytest -q"
+echo "Start API:  harness-serve"

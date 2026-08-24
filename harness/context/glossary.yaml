@@ -1,0 +1,12 @@
+name: sales_glossary
+description: Core business terms for the sales/CRM domain
+scope:
+  agent_tags: ["sales", "crm"]
+always_inject: true
+entries:
+  - term: "AUM"
+    definition: "Assets Under Management — total market value of assets a firm manages on behalf of clients."
+  - term: "SQL lead"
+    definition: "Sales-Qualified Lead — met defined criteria for handoff from marketing to sales."
+rules:
+  - "Never quote a specific AUM figure without citing the source system and as-of date."

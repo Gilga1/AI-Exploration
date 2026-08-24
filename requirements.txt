@@ -1,18 +1,39 @@
-# Core extraction pipeline
+# Production dependencies for the Agent Harness FastAPI backend.
+# Source of truth is pyproject.toml — regenerate with: pip install -e ".[dev]"
+
+# Web framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+pydantic-settings>=2.6.0
+python-dotenv>=1.0.0
+
+# Config & HTTP
 pyyaml>=6.0.2
-tqdm>=4.66.0
 httpx>=0.27.0
 
-# Training stack (install after confirming CUDA; see scripts/setup_env.sh)
-# unsloth
-# transformers>=5.0.0
-# trl>=0.15.0
-# peft>=0.14.0
-# datasets>=3.0.0
-# accelerate>=1.2.0
-# torch
+# Agent orchestration
+langgraph>=0.2.0
+langchain-core>=0.3.0
+langchain-anthropic>=0.3.0
+langchain-openai>=0.3.0
+langchain-mcp-adapters>=0.1.0
+deepagents>=0.7.0
 
-# Optional validation against agent stack
-# langchain-core>=0.3.0
-# langgraph>=0.2.0
-# deepagents>=0.2.0
+# Tools & integrations
+firecrawl-py>=4.0.0
+fpdf2>=2.8.0
+matplotlib>=3.9.0
+
+# Data connectors
+asyncpg>=0.30.0
+redis>=5.0.0
+
+# Observability
+opentelemetry-api>=1.27.0
+opentelemetry-sdk>=1.27.0
+opentelemetry-exporter-otlp-proto-http>=1.27.0
+langfuse>=4.0.0
+
+# Install optional connector backends as needed:
+#   pip install -r requirements-azure.txt
+#   pip install -r requirements-snowflake.txt

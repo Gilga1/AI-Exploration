@@ -1,0 +1,8 @@
+name: local_cache
+kind: redis
+host: ${env:REDIS_HOST}
+database: "0"
+user: ""
+password: ${secret:redis-password}
+pool_size: 5
+health_check_query: "PING"

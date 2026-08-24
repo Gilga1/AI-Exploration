@@ -1,0 +1,11 @@
+name: product_docs_index
+kind: azure_ai_search
+host: ${env:AZURE_SEARCH_ENDPOINT}
+database: product-docs
+password: ${secret:azure-search-api-key}
+health_check_query: "ping"
+extra:
+  provider: azure_ai_search
+  endpoint: ${env:AZURE_SEARCH_ENDPOINT}
+  index_name: product-docs
+  api_key: ${secret:azure-search-api-key}

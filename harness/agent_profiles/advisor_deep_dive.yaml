@@ -1,0 +1,13 @@
+name: advisor_deep_dive
+base_agent: agentic_analyzer
+description: Extended AUM-focused sales analysis using the agentic_analyzer base with deeper step budget.
+capability_tags:
+  - aum
+  - deep-dive
+overrides:
+  max_steps: 60
+  system_prompt_fragment: |
+    Prioritize AUM collections and longer historical windows when the user asks for a deep dive.
+  config:
+    analysis_defaults:
+      collection: Details_FTAUM

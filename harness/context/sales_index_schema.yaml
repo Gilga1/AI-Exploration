@@ -1,0 +1,22 @@
+name: sales_index_schema
+description: Sales AI index collection and field reference for agentic analysis
+scope:
+  agent_tags: ["analytics", "sales"]
+entries:
+  - term: "Contact Global ID"
+    definition: "Canonical advisor identifier. Resolve via advisor_guided_search, then fetch from sales_ai_index."
+  - term: "DETAILS_FTSALES"
+    definition: "Sales transactions collection with Asset Class, Product Vehicle, Product Strategy, Product Name, Sales in dollar, Date."
+  - term: "Details_FTRED"
+    definition: "Redemption transactions with the same shape as DETAILS_FTSALES."
+  - term: "Details_FTAUM"
+    definition: "Current AUM by product for the advisor."
+  - term: "Details_DST"
+    definition: "Office-level industry/market share metrics (INDAUM, FTAUM, rolling_sales, greenspace)."
+  - term: "Details_DP"
+    definition: "Advisor-level industry metrics; populated only for MS, UBS, LPL, Wells Fargo, Cetera."
+rules:
+  - "Always resolve advisor identity via index_lookup on advisor_guided_search before fetching sales_ai_index documents."
+  - "Use flatten_collection then aggregate_data for product/sales questions; do not hardcode report-specific tools."
+  - "Use sql_query against analytics_snowflake only as a fallback and expect HITL approval."
+  - "Prefer render_output with chart format when the user asks for visual comparisons."

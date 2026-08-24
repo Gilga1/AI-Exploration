@@ -1,0 +1,112 @@
+name: agentic_analyzer
+description: Multi-step EDA agent for advisor sales analytics using configurable index connectors and generic data pipeline tools.
+capability_tags:
+  - analytics
+  - sales
+  - eda
+  - advisor
+system_prompt: |
+  You are an expert data analyst agent. Given a business question about an advisor or book of business:
+  1. Resolve the advisor using index_lookup on the guided search connector.
+  2. Fetch the advisor document from the sales index connector.
+  3. Flatten the appropriate nested collection (default DETAILS_FTSALES unless the question specifies redemptions, AUM, or industry metrics).
+  4. Filter by date range when the user specifies a time window.
+  5. Aggregate, compute derived metrics, and run EDA tools as needed.
+  6. Render results using render_output in the format requested (table, narrative, chart, or json).
+
+  Use connector names and defaults from your agent config block. Do not assume field names beyond what connector schemas document.
+context_packs:
+  - sales_glossary
+  - sales_index_schema
+allowed_tools:
+  - index_lookup
+  - index_fetch_document
+  - flatten_collection
+  - aggregate_data
+  - compute_derived_metrics
+  - cohort_analysis
+  - detect_anomalies
+  - trend_forecast
+  - render_output
+  - sql_query
+model_config_ref: primary_reasoner
+interrupt_tools:
+  - sql_query
+max_steps: 40
+max_tokens_budget: 80000
+timeout_s: 300
+config:
+  connectors:
+    guided_search: advisor_guided_search
+    sales_index: sales_ai_index
+    snowflake_fallback: analytics_snowflake
+  analysis_defaults:
+    collection: DETAILS_FTSALES
+    date_field: Date
+    measure_field: Sales in dollar
+    parent_fields:
+      - contact_global_id
+      - advisor_name
+      - firm_name
+      - territory
+  output:
+    default_format: table
+    chart_type: bar
+  hitl:
+    sql_fallback: true
+  stub:
+    extract:
+      advisor_name: "(?:advisor|for)\\s+['\"]?([A-Za-z][A-Za-z .'-]+?)(?:\\s+(?:in|over|by|for|last)|[,.]|$)"
+      group_by: "(?:group(?:ed)?\\s+by|by)\\s+([A-Za-z][A-Za-z ]+)"
+    steps:
+      - tool: flatten_collection
+        as: flattened
+        args:
+          document:
+            contact_global_id: STUB-001
+            advisor_name: "{{advisor_name}}"
+            DETAILS_FTSALES:
+              - Asset Class: Equity
+                Product Vehicle: Mutual Fund
+                Product Strategy: Growth
+                Product Name: Alpha Growth Fund
+                Sales in dollar: 125000
+                Date: "2025-08-01"
+              - Asset Class: Fixed Income
+                Product Vehicle: ETF
+                Product Strategy: Core
+                Product Name: Core Bond ETF
+                Sales in dollar: 85000
+                Date: "2025-07-15"
+              - Asset Class: Equity
+                Product Vehicle: Mutual Fund
+                Product Strategy: Value
+                Product Name: Value Select Fund
+                Sales in dollar: 64000
+                Date: "2025-06-20"
+          collection: DETAILS_FTSALES
+          parent_fields:
+            - contact_global_id
+            - advisor_name
+      - tool: aggregate_data
+        as: aggregated
+        args:
+          records: "{{steps.flattened.records}}"
+          group_by:
+            - Product Name
+          measures:
+            Sales in dollar: sum
+          sort_by: Sales in dollar
+          sort_desc: true
+      - tool: render_output
+        as: rendered
+        args:
+          data: "{{steps.aggregated.rows}}"
+          format: table
+          title: "Sales by Product for {{advisor_name}}"
+    output:
+      advisor: "{{advisor_name}}"
+      contact_global_id: STUB-001
+      analysis_summary: "Stub pipeline completed for {{advisor_name}}"
+      rows: "{{steps.aggregated.rows}}"
+      rendered: "{{steps.rendered.content}}"

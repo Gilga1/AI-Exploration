@@ -1,0 +1,21 @@
+tables:
+  - name: opportunities
+    description: One row per sales opportunity in the pipeline.
+    columns:
+      - name: opp_id
+        type: uuid
+        description: Primary key.
+      - name: stage
+        type: text
+        description: "One of: prospecting, qualification, proposal, closed_won, closed_lost."
+      - name: amount_usd
+        type: numeric
+        description: Deal size in USD, pre-discount.
+      - name: owner_id
+        type: uuid
+        description: FK to users.user_id — the sales rep who owns this opportunity.
+    relationships:
+      - "owner_id -> users.user_id"
+    example_queries:
+      - question: "What's the total open pipeline for a rep?"
+        sql: "SELECT SUM(amount_usd) FROM opportunities WHERE owner_id = :owner_id AND stage NOT IN ('closed_won','closed_lost')"

@@ -1,0 +1,11 @@
+name: advisor_guided_search
+kind: azure_ai_search
+host: ${env:AZURE_SEARCH_ENDPOINT}
+database: advisor-guided-search
+password: ${secret:azure-search-api-key}
+health_check_query: "ping"
+extra:
+  provider: azure_ai_search
+  endpoint: ${env:AZURE_SEARCH_ENDPOINT}
+  index_name: ${env:ADVISOR_GUIDED_SEARCH_INDEX}
+  api_key: ${secret:azure-search-api-key}
