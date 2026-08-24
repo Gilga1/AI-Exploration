@@ -36,6 +36,18 @@ class Settings(BaseSettings):
     rag_embedding_dimension: int = 256
     rag_retrieval_k: int = 3
     eval_sampling_rate: float = 1.0  # Head-based rate for trace scoring; <1.0 bounds judge cost.
+    alert_webhook_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ALERT_WEBHOOK_URL", "APP_ALERT_WEBHOOK_URL"),
+    )
+    alert_thresholds_json: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ALERT_THRESHOLDS", "APP_ALERT_THRESHOLDS"),
+    )
+    api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("API_KEY", "APP_API_KEY"),
+    )
     llm_model: str = "gpt-4o-mini"
     openai_api_key: str | None = Field(
         default=None,

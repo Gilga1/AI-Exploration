@@ -5,14 +5,16 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 
+from app.core.auth import require_api_key
 from app.db.models import EvalResult, Trace
 from app.db.session import session_scope
+from app.evaluation.alerting import check_score_thresholds
 from app.evaluation.runners.realtime_worker import score_pending_traces
 
-router = APIRouter(prefix="/metrics", tags=["metrics"])
+router = APIRouter(prefix="/metrics", tags=["metrics"], dependencies=[Depends(require_api_key)])
 
 
 @router.get("/rag")
@@ -78,6 +80,15 @@ def rag_metrics(per_trace: bool = False) -> dict[str, Any]:
     }
     if per_trace:
         payload["per_trace"] = per_trace_rows
+
+    # P6-T2: opportunistically check thresholds and fire webhook alerts.
+    try:
+        breaches = check_score_thresholds()
+        if breaches:
+            payload["alerts"] = breaches
+    except Exception:
+        pass  # Alerting must never break the metrics endpoint.
+
     return payload
 
 
