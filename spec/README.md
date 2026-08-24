@@ -29,8 +29,8 @@ User → Planner → HITL plan approval → Execute tasks (agents/skills) → Sy
 | Phase | Spec | Status |
 |-------|------|--------|
 | 1 | [phase-1-multi-agent-delegation.md](./phase-1-multi-agent-delegation.md) | **Implemented** |
-| 2 | [phase-2-dag-parallelism.md](./phase-2-dag-parallelism.md) | Planned |
-| 3 | [phase-3-observability.md](./phase-3-observability.md) | Planned |
+| 2 | [phase-2-dag-parallelism.md](./phase-2-dag-parallelism.md) | **Implemented** |
+| 3 | [phase-3-observability.md](./phase-3-observability.md) | **Implemented** |
 | 4 | [phase-4-workflow-templates.md](./phase-4-workflow-templates.md) | Planned |
 | 5 | [phase-5-dynamic-sub-agents.md](./phase-5-dynamic-sub-agents.md) | Planned |
 

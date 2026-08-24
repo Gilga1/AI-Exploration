@@ -50,6 +50,14 @@ class HarnessSettings(BaseSettings):
     orchestration_synthesizer_agent: str = "synthesizer"
     orchestration_continue_on_failure: bool = True
     orchestration_fast_path_single_task: bool = True
+    orchestration_parallel: bool = True
+    orchestration_max_parallel: int = 3
+    orchestration_failure_policy: Literal["continue", "fail_fast", "retry_once"] = "continue"
+    orchestration_plans_db_path: str = "data/harness_plans.db"
+    orchestration_alert_webhook_url: str | None = None
+    orchestration_alert_on_statuses: list[str] = Field(
+        default_factory=lambda: ["partial_success", "failure"]
+    )
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> HarnessSettings:

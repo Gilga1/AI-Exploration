@@ -58,8 +58,13 @@ class Orchestrator:
         self.settings = settings
         self.approval_store = approval_store
         self.connector_registry = connector_registry
+        self._plan_store = None
         self._plan_runner = self._build_plan_runner()
         self.graph = self._compile_graph()
+
+    def set_plan_store(self, plan_store: object) -> None:
+        self._plan_store = plan_store
+        self._plan_runner = self._build_plan_runner()
 
     def _build_plan_runner(self) -> PlanRunner:
         from harness.config.loader import load_config_plane
@@ -85,6 +90,7 @@ class Orchestrator:
             telemetry=self.telemetry,
             settings=self.settings,
             config=config,
+            plan_store=getattr(self, "_plan_store", None),
         )
 
     def _compile_graph(self):

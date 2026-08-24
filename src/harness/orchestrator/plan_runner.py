@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import uuid
 from typing import Any
 
@@ -8,7 +9,9 @@ from harness.config.models import ConfigPlane
 from harness.core.models import ExecutionBudget, HandoffPacket
 from harness.core.request import IncomingRequest, OrchestratorResult, ResumeRequest
 from harness.hitl.store import ApprovalStore, PendingApproval
+from harness.orchestrator.alerts import maybe_send_plan_alert
 from harness.orchestrator.plan_models import ExecutionPlan, TaskResult
+from harness.orchestrator.plan_store import PlanRecord, PlanStore
 from harness.orchestrator.planner import Planner
 from harness.orchestrator.task_executor import TaskExecutor
 from harness.registry.registry import ToolRegistry
@@ -28,6 +31,7 @@ class PlanRunner:
         telemetry: TelemetryBus,
         settings: HarnessSettings,
         config: ConfigPlane,
+        plan_store: PlanStore | None = None,
     ) -> None:
         self._registry = registry
         self._planner = planner
@@ -36,6 +40,8 @@ class PlanRunner:
         self._telemetry = telemetry
         self._settings = settings
         self._config = config
+        self._plan_store = plan_store
+        self._plan_timings: dict[str, float] = {}
 
     async def start(
         self,
@@ -84,6 +90,13 @@ class PlanRunner:
             )
         )
         self._emit_plan(trace_id, plan, action="created", parent_span_id=root_span_id)
+        self._persist_plan(
+            plan,
+            trace_id=trace_id,
+            thread_id=thread_id,
+            status="awaiting_approval",
+            message=request.message,
+        )
 
         return OrchestratorResult(
             trace_id=trace_id,
@@ -143,6 +156,15 @@ class PlanRunner:
             display_message="Plan approved. Executing tasks.",
         )
 
+        self._plan_timings[plan.plan_id] = time.perf_counter()
+        self._persist_plan(
+            plan,
+            trace_id=approval.trace_id,
+            thread_id=request.thread_id,
+            status="approved",
+            message=str(payload.get("message") or ""),
+        )
+
         return await self._execute_approved_plan(
             plan,
             message=str(payload.get("message") or ""),
@@ -162,6 +184,7 @@ class PlanRunner:
         root_span_id: str | None = None,
         task_id: str | None = None,
     ) -> OrchestratorResult:
+        started = self._plan_timings.get(plan.plan_id, time.perf_counter())
         task_results, plan = await self._task_executor.execute(
             plan,
             trace_id=trace_id,
@@ -194,6 +217,27 @@ class PlanRunner:
             action=plan_action,
             parent_span_id=root_span_id,
             display_message=synth_output.get("response", "Plan completed."),
+        )
+
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        metrics = _plan_metrics(task_results, duration_ms=duration_ms)
+        self._persist_plan(
+            plan,
+            trace_id=trace_id,
+            thread_id=thread_id,
+            status=plan.status,
+            message=str(synth_output.get("response") or ""),
+            task_results={k: v.model_dump() for k, v in task_results.items()},
+            metrics=metrics,
+        )
+
+        await maybe_send_plan_alert(
+            settings=self._settings,
+            status=status,
+            trace_id=trace_id,
+            plan_id=plan.plan_id,
+            message=str(synth_output.get("response") or ""),
+            task_results={k: v.model_dump() for k, v in task_results.items()},
         )
 
         return OrchestratorResult(
@@ -301,6 +345,45 @@ class PlanRunner:
                 plan_snapshot=plan.model_dump(),
             )
         )
+
+    def _persist_plan(
+        self,
+        plan: ExecutionPlan,
+        *,
+        trace_id: str,
+        thread_id: str,
+        status: str,
+        message: str,
+        task_results: dict[str, Any] | None = None,
+        metrics: dict[str, Any] | None = None,
+    ) -> None:
+        if self._plan_store is None:
+            return
+        self._plan_store.upsert(
+            PlanRecord(
+                plan_id=plan.plan_id,
+                trace_id=trace_id,
+                thread_id=thread_id,
+                status=status,
+                message=message,
+                plan=plan.model_dump(),
+                task_results=task_results or {},
+                metrics=metrics or {},
+            )
+        )
+
+
+def _plan_metrics(task_results: dict[str, TaskResult], *, duration_ms: int) -> dict[str, Any]:
+    total = len(task_results)
+    succeeded = sum(1 for r in task_results.values() if r.status == "success")
+    failed = sum(1 for r in task_results.values() if r.status in ("failure", "blocked", "skipped"))
+    return {
+        "duration_ms": duration_ms,
+        "task_count": total,
+        "tasks_succeeded": succeeded,
+        "tasks_failed": failed,
+        "task_success_rate": succeeded / total if total else 0.0,
+    }
 
 
 def _fallback_synthesis(completed: list[str], failed: list[dict[str, Any]]) -> str:

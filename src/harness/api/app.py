@@ -75,6 +75,70 @@ def create_app(settings: HarnessSettings | None = None) -> FastAPI:
         pending = state.approval_store.list_pending(limit=limit)
         return {"pending": pending, "count": len(pending)}
 
+    @app.get("/admin/plans")
+    async def admin_plans(limit: int = 50, status: str | None = None) -> dict:
+        state = get_bootstrap_state()
+        records = state.plan_store.list_recent(limit=limit, status=status)
+        return {
+            "plans": [
+                {
+                    "plan_id": record.plan_id,
+                    "trace_id": record.trace_id,
+                    "thread_id": record.thread_id,
+                    "status": record.status,
+                    "message": record.message,
+                    "metrics": record.metrics,
+                    "updated_at": record.updated_at.isoformat(),
+                }
+                for record in records
+            ],
+            "count": len(records),
+        }
+
+    @app.get("/admin/plans/{plan_id}")
+    async def admin_plan_detail(plan_id: str) -> dict:
+        state = get_bootstrap_state()
+        record = state.plan_store.get(plan_id)
+        if record is None:
+            return {"error": f"Plan {plan_id!r} not found"}
+        return {
+            "plan_id": record.plan_id,
+            "trace_id": record.trace_id,
+            "thread_id": record.thread_id,
+            "status": record.status,
+            "message": record.message,
+            "plan": record.plan,
+            "task_results": record.task_results,
+            "metrics": record.metrics,
+            "created_at": record.created_at.isoformat(),
+            "updated_at": record.updated_at.isoformat(),
+        }
+
+    @app.get("/admin/plans/{plan_id}/waterfall")
+    async def admin_plan_waterfall(plan_id: str) -> dict:
+        state = get_bootstrap_state()
+        record = state.plan_store.get(plan_id)
+        if record is None:
+            return {"error": f"Plan {plan_id!r} not found"}
+        from harness.orchestrator.waterfall import build_waterfall
+
+        events = state.telemetry.list_events_for_trace(record.trace_id)
+        return {
+            "plan_id": plan_id,
+            "trace_id": record.trace_id,
+            "waterfall": build_waterfall(events),
+            "events": events,
+        }
+
+    @app.get("/admin/metrics")
+    async def admin_metrics() -> dict:
+        state = get_bootstrap_state()
+        return {
+            "plans": state.plan_store.metrics_summary(),
+            "routing_index_size": len(state.capability_index),
+            "registry": state.tool_registry.introspection_payload(state.connector_registry)["counts"],
+        }
+
     @app.post("/v1/handle", response_model=OrchestratorResult)
     async def handle_request(request: IncomingRequest) -> OrchestratorResult:
         state = get_bootstrap_state()

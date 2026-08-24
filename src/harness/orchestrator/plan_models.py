@@ -16,6 +16,7 @@ PlanStatus = Literal[
     "failed",
 ]
 AssigneeKind = Literal["agent", "skill"]
+FailurePolicy = Literal["continue", "fail_fast", "retry_once"]
 
 
 class PlannedTask(BaseModel):
@@ -31,6 +32,8 @@ class PlannedTask(BaseModel):
     fallback_hint: str | None = None
     error: str | None = None
     user_message: str | None = None
+    max_steps: int | None = Field(default=None, description="Override agent max_steps for this task")
+    timeout_s: int | None = Field(default=None, description="Override agent timeout for this task")
 
 
 class ExecutionPlan(BaseModel):
@@ -38,6 +41,7 @@ class ExecutionPlan(BaseModel):
     tasks: list[PlannedTask]
     rationale: str = ""
     status: PlanStatus = "draft"
+    failure_policy: FailurePolicy | None = None
 
 
 class TaskResult(BaseModel):
@@ -50,6 +54,7 @@ class TaskResult(BaseModel):
     error: str | None = None
     user_message: str | None = None
     artifacts: list[dict[str, Any]] = Field(default_factory=list)
+    duration_ms: int | None = None
 
 
 def topological_order(tasks: list[PlannedTask]) -> list[PlannedTask]:

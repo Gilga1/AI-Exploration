@@ -1,7 +1,6 @@
 # Phase 2 — DAG + Parallelism
 
-**Status:** Planned  
-**Depends on:** Phase 1
+**Status:** Implemented
 
 ---
 

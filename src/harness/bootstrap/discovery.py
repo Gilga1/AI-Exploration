@@ -14,6 +14,7 @@ from harness.hitl.store import ApprovalStore
 from harness.memory.manager import MemoryManager
 from harness.mcp.discovery import discover_mcp_tools
 from harness.orchestrator.orchestrator import Orchestrator
+from harness.orchestrator.plan_store import PlanStore
 from harness.registry.decorators import bind_registries
 from harness.registry.data_sources import DataSourceRegistry
 from harness.registry.registry import ToolRegistry
@@ -131,6 +132,7 @@ async def bootstrap(settings: HarnessSettings | None = None) -> BootstrapState:
         langfuse_enabled=settings.langfuse_enabled,
     )
     approval_store = ApprovalStore(settings.approvals_db_path)
+    plan_store = PlanStore(settings.orchestration_plans_db_path)
     memory = MemoryManager(
         reflective_conn=next(iter(connector_registry.connectors.values()), None),
         episodic_db_path=settings.episodic_db_path,
@@ -168,6 +170,7 @@ async def bootstrap(settings: HarnessSettings | None = None) -> BootstrapState:
         approval_store=approval_store,
         connector_registry=connector_registry,
     )
+    orchestrator.set_plan_store(plan_store)
 
     return BootstrapState(
         settings=settings,
@@ -180,6 +183,7 @@ async def bootstrap(settings: HarnessSettings | None = None) -> BootstrapState:
         router=router,
         orchestrator=orchestrator,
         approval_store=approval_store,
+        plan_store=plan_store,
         imported_modules=imported,
     )
 

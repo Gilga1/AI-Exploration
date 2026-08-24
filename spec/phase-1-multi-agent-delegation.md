@@ -257,10 +257,10 @@ orchestration_fast_path_single_task: true
 
 ## Acceptance criteria
 
-- [ ] Planner produces valid plan from registry catalog
-- [ ] Plan HITL blocks execution until `/v1/resume` approve
-- [ ] Tasks execute sequentially with realtime events
-- [ ] Synthesizer always runs last
-- [ ] Partial failures return actionable user messages
-- [ ] Existing single-agent routes remain backward compatible
-- [ ] All tests pass
+- [x] Planner produces valid plan from registry catalog
+- [x] Plan HITL blocks execution until `/v1/resume` approve
+- [x] Tasks execute sequentially with realtime events
+- [x] Synthesizer always runs last
+- [x] Partial failures return actionable user messages
+- [x] Existing single-agent routes remain backward compatible
+- [x] All tests pass

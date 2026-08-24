@@ -89,3 +89,17 @@ class TaskEvent(TraceEventBase):
     action: Literal["started", "completed", "failed"]
     display_message: str = ""
     error: str | None = None
+    duration_ms: int | None = None
+
+    @property
+    def assignee(self) -> dict[str, str]:
+        return {"kind": self.assignee_kind, "name": self.assignee_name}
+
+
+class PlanProgressEvent(TraceEventBase):
+    event_type: str = "plan_progress"
+    plan_id: str
+    completed: int
+    total: int
+    running: list[str] = Field(default_factory=list)
+    display_message: str = ""
