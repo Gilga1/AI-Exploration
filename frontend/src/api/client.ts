@@ -66,3 +66,29 @@ export function listTraces(): Promise<TraceSummary[]> {
 export function getTrace(traceId: string): Promise<TraceDetail> {
   return apiRequest<TraceDetail>(`/api/v1/traces/${traceId}`);
 }
+
+export interface RagMetricSummary {
+  name: string;
+  avg_score: number | null;
+  cases_scored: number;
+  status: "passed" | "failed" | "no-data";
+}
+
+export interface RagMetricTraceRow {
+  trace_id: string;
+  metric: string;
+  score: number | null;
+  status: string;
+  reasoning?: string | null;
+  scored_at?: string | null;
+}
+
+export interface RagMetrics {
+  summary: RagMetricSummary[];
+  total_traces_scored: number;
+  per_trace?: RagMetricTraceRow[];
+}
+
+export function getRagMetrics(perTrace = false): Promise<RagMetrics> {
+  return apiRequest<RagMetrics>(`/api/v1/metrics/rag${perTrace ? "?per_trace=true" : ""}`);
+}

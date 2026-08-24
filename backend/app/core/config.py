@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     rag_embedding_model: str | None = None
     rag_embedding_dimension: int = 256
     rag_retrieval_k: int = 3
+    eval_sampling_rate: float = 1.0  # Head-based rate for trace scoring; <1.0 bounds judge cost.
     llm_model: str = "gpt-4o-mini"
     openai_api_key: str | None = Field(
         default=None,
