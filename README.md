@@ -79,6 +79,7 @@ harness-serve
 |----------|-------------|
 | `GET /health` | Liveness |
 | `GET /admin/capabilities` | Registry + config plane introspection |
+| `GET /admin/agent_profiles` | Loaded agent profile templates |
 | `GET /admin/workflows` | Loaded workflow templates + planner settings |
 | `GET /admin/plans` | Recent execution plans (snapshots) |
 | `GET /admin/plans/{plan_id}` | Plan detail + task results |
@@ -129,6 +130,7 @@ harness/                  # Plugin + config drop-zones (your domain)
   skills/                 # @register_skill
   agents/                 # YAML agent manifests
   workflows/              # YAML multi-agent plan templates (Phase 4)
+  agent_profiles/         # YAML agent profile overrides (Phase 5)
   connectors/             # connector.yaml per data source
   context/                # Business context packs
   models/                 # LLM endpoint registry
@@ -145,7 +147,7 @@ harness.settings.yaml
 | 2 | Parallel DAG — `depends_on`, concurrency limits, failure policies | **Implemented** |
 | 3 | Observability — plan store, waterfall, metrics, alerts | **Implemented** |
 | 4 | Workflow templates — YAML plans, slot filling, planner modes | **Implemented** |
-| 5 | Dynamic sub-agent profiles — runtime YAML overrides | Planned |
+| 5 | Dynamic sub-agent profiles — runtime YAML overrides on base agents | **Implemented** |
 
 See **[spec/README.md](spec/README.md)** for detailed specs.
 
@@ -162,6 +164,11 @@ See **[spec/README.md](spec/README.md)** for detailed specs.
 ## Planner modes
 
 Configured via `orchestration_planner` in `harness.settings.yaml`:
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `orchestration_planner_model` | `fast_router` | LLM for planning / hybrid refinement |
+| `routing_llm_model` | `fast_router` | LLM for routing disambiguation |
 
 | Mode | Behavior |
 |------|----------|

@@ -32,7 +32,7 @@ User → Planner → HITL plan approval → Execute tasks (agents/skills) → Sy
 | 2 | [phase-2-dag-parallelism.md](./phase-2-dag-parallelism.md) | **Implemented** |
 | 3 | [phase-3-observability.md](./phase-3-observability.md) | **Implemented** |
 | 4 | [phase-4-workflow-templates.md](./phase-4-workflow-templates.md) | **Implemented** |
-| 5 | [phase-5-dynamic-sub-agents.md](./phase-5-dynamic-sub-agents.md) | Planned |
+| 5 | [phase-5-dynamic-sub-agents.md](./phase-5-dynamic-sub-agents.md) | **Implemented** |
 
 ## Related code
 

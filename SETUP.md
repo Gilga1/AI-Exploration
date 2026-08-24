@@ -138,7 +138,7 @@ pip install -r requirements-snowflake.txt  # Snowflake
 pytest -q
 ```
 
-Expected: **43 passed**.
+Expected: **54 passed**.
 
 ---
 
@@ -154,6 +154,7 @@ Server: **http://localhost:8000**
 |----------|--------|---------|
 | `/health` | GET | Liveness |
 | `/admin/capabilities` | GET | List tools, skills, agents, connectors |
+| `/admin/agent_profiles` | GET | Loaded agent profile templates |
 | `/admin/workflows` | GET | Loaded workflow templates |
 | `/admin/plans` | GET | Recent execution plan snapshots |
 | `/admin/plans/{plan_id}` | GET | Plan detail + task results |
@@ -197,6 +198,8 @@ For complex or cross-domain requests (or when `orchestration.mode` is `multi`):
 orchestration_mode: auto              # auto | single | multi
 orchestration_require_plan_approval: true
 orchestration_planner: auto           # auto | llm | template | hybrid
+orchestration_planner_model: fast_router
+routing_llm_model: fast_router
 orchestration_workflow_match_threshold: 0.6
 orchestration_max_tasks: 5
 orchestration_synthesizer_agent: synthesizer
@@ -367,7 +370,32 @@ The synthesizer agent is appended automatically — do not include it in workflo
 
 ---
 
-## 10. Business context
+## 10. Agent profiles (Phase 5)
+
+Profiles are **configured instances** of existing base agents — YAML overrides without duplicating full agent files or generating code.
+
+Example: `harness/agent_profiles/advisor_deep_dive.yaml`
+
+```yaml
+name: advisor_deep_dive
+base_agent: agentic_analyzer
+description: Extended AUM analysis.
+overrides:
+  max_steps: 60
+  system_prompt_fragment: |
+    Prioritize AUM collections for deep-dive requests.
+  config:
+    analysis_defaults:
+      collection: Details_FTAUM
+```
+
+Profiles register as routable agents and appear in the capability index. Overrides are validated — profiles cannot add tools outside the base agent's `allowed_tools`.
+
+List loaded profiles: `GET /admin/agent_profiles`
+
+---
+
+## 11. Business context
 
 Add domain knowledge under **`harness/context/`** as YAML files.
 
@@ -397,7 +425,7 @@ Restart the server after changes.
 
 ---
 
-## 11. Adding capabilities
+## 12. Adding capabilities
 
 ### New tool (`harness/tools/my_tool.py`)
 
@@ -450,11 +478,11 @@ interrupt_tools: []   # tools requiring HITL
 
 ### New workflow (`harness/workflows/my_workflow.yaml`)
 
-Define `match_tags`, `variables`, and `tasks` as shown in section 9. Restart `harness-serve` after any plugin change.
+Define `match_tags`, `variables`, and `tasks` as shown in section 9. ### New agent profile (`harness/agent_profiles/my_profile.yaml`)
 
----
+Define `base_agent`, optional `capability_tags`, and `overrides` (`max_steps`, `config`, `system_prompt_fragment`, etc.). Restart `harness-serve` after changes.
 
-## 12. LLM models (`harness/models/models.yaml`)
+## 13. LLM models (`harness/models/models.yaml`)
 
 ```yaml
 models:
@@ -481,7 +509,7 @@ routing_use_llm: true
 
 ---
 
-## 13. MCP connectors (`harness/mcp/servers.yaml`)
+## 14. MCP connectors (`harness/mcp/servers.yaml`)
 
 Enable external tool servers (Jira, Confluence, etc.):
 
@@ -498,7 +526,7 @@ MCP tools are registered at bootstrap with `requires_approval: true` by default.
 
 ---
 
-## 14. Observability
+## 15. Observability
 
 ### Realtime event stream
 
@@ -518,7 +546,7 @@ Set `LANGFUSE_PUBLIC_KEY` + `LANGFUSE_SECRET_KEY` for OTel export to Langfuse da
 
 ---
 
-## 15. Data persistence
+## 16. Data persistence
 
 | Store | Path (default) | Purpose |
 |-------|----------------|---------|
@@ -538,11 +566,11 @@ orchestration_plans_db_path: data/harness_plans.db
 
 ---
 
-## 16. What's still pending
+## 17. What's still pending
 
 | Feature | Status |
 |---------|--------|
-| Phase 5 — dynamic sub-agent profiles | Planned (see `spec/phase-5-dynamic-sub-agents.md`) |
+| Phase 5 — dynamic sub-agent profiles | Implemented (see section 10) |
 | Reflective / nightly memory curation | Not implemented |
 | Async agent workers (Celery/queue) | Not implemented |
 | Sandbox microVM execution | Not implemented |
@@ -551,7 +579,7 @@ orchestration_plans_db_path: data/harness_plans.db
 
 ---
 
-## 17. Troubleshooting
+## 18. Troubleshooting
 
 | Issue | Fix |
 |-------|-----|
@@ -572,6 +600,7 @@ harness/                  # Plugin drop-zones (your code + config)
   skills/                 # @register_skill
   agents/                 # YAML agents
   workflows/              # YAML multi-agent plan templates
+  agent_profiles/         # YAML agent profile overrides
   context/                # Business context packs
   models/                 # LLM endpoints
   connectors/             # Data sources

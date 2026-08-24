@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from harness.agents.loader import load_yaml_agents
+from harness.agents.profile_loader import AgentProfileRegistry, load_agent_profiles
 from harness.bootstrap.state import BootstrapState
 from harness.config.loader import load_config_plane
 from harness.connectors.factory import build_connector
@@ -162,6 +163,18 @@ async def bootstrap(settings: HarnessSettings | None = None) -> BootstrapState:
     )
     imported.extend(yaml_agents)
 
+    profile_registry = load_agent_profiles(
+        settings.config_root,
+        config=config,
+        registry=tool_registry,
+        telemetry=telemetry,
+        approval_store=approval_store,
+        force_stub_models=settings.force_stub_models,
+        checkpointer=memory.working,
+        connectors=connector_registry.connectors,
+    )
+    imported.extend([f"profile:{profile.name}" for profile in profile_registry.profiles])
+
     validate_registry(tool_registry, strict_sandbox=settings.strict_sandbox_validation)
 
     if settings.connector_health_check and connector_registry.connectors:
@@ -194,6 +207,7 @@ async def bootstrap(settings: HarnessSettings | None = None) -> BootstrapState:
         approval_store=approval_store,
         plan_store=plan_store,
         workflow_registry=workflow_registry,
+        profile_registry=profile_registry,
         imported_modules=imported,
     )
 

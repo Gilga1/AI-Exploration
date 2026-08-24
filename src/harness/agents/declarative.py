@@ -89,6 +89,7 @@ class DeclarativeAgent(BaseAgent):
                     span_id=handoff_span or self._telemetry.new_span_id(),
                     child_task_id=packet.task_id,
                     agent_name=self.manifest.name,
+                    base_agent_name=self.manifest.profile_of,
                     budget=packet.budget,
                     status="started",
                 )
@@ -125,6 +126,7 @@ class DeclarativeAgent(BaseAgent):
                     span_id=handoff_span,
                     child_task_id=packet.task_id,
                     agent_name=self.manifest.name,
+                    base_agent_name=self.manifest.profile_of,
                     budget=packet.budget,
                     status=result.status,
                     latency_ms=int((time.perf_counter() - start) * 1000),

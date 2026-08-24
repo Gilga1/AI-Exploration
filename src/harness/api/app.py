@@ -130,6 +130,12 @@ def create_app(settings: HarnessSettings | None = None) -> FastAPI:
             "events": events,
         }
 
+    @app.get("/admin/agent_profiles")
+    async def admin_agent_profiles() -> dict:
+        state = get_bootstrap_state()
+        profiles = state.profile_registry.list_summaries(state.tool_registry)
+        return {"profiles": profiles, "count": len(profiles)}
+
     @app.get("/admin/workflows")
     async def admin_workflows() -> dict:
         state = get_bootstrap_state()

@@ -15,7 +15,7 @@ PlanStatus = Literal[
     "partial",
     "failed",
 ]
-AssigneeKind = Literal["agent", "skill"]
+AssigneeKind = Literal["agent", "skill", "profile"]
 FailurePolicy = Literal["continue", "fail_fast", "retry_once"]
 
 

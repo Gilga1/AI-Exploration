@@ -72,15 +72,22 @@ class TaskExecutor:
         root_span_id: str | None,
     ) -> TaskResult:
         task_span_id = self._telemetry.new_span_id()
+        task_attrs: dict[str, str] = {
+            "harness.task.id": task.task_id,
+            "harness.task.assignee": task.assignee_name,
+            "harness.task.kind": task.assignee_kind,
+        }
+        if task.assignee_kind in ("agent", "profile"):
+            agent = self._registry.agents.get(task.assignee_name)
+            if agent and agent.manifest.profile_of:
+                task_attrs["harness.agent.profile"] = agent.manifest.name
+                task_attrs["harness.agent.base"] = agent.manifest.profile_of
+
         with self._telemetry.span(
             f"task:{task.task_id}",
             trace_id=trace_id,
             span_id=task_span_id,
-            otel_attributes={
-                "harness.task.id": task.task_id,
-                "harness.task.assignee": task.assignee_name,
-                "harness.task.kind": task.assignee_kind,
-            },
+            otel_attributes=task_attrs,
         ):
             artifacts = ArtifactStore()
             context = RunContext(
@@ -97,11 +104,13 @@ class TaskExecutor:
 
             if task.assignee_kind == "skill":
                 skill = self._registry.skills[task.assignee_name]
-                payload_data = _build_skill_input(task, results, original_message)
+                payload_data = _build_skill_input(
+                    task, results, original_message, self._registry
+                )
                 payload = skill.validate_input(payload_data)
                 output_model = await skill.execute(payload, context=context)
                 output = output_model.model_dump() if hasattr(output_model, "model_dump") else dict(output_model)
-            else:
+            if task.assignee_kind in ("agent", "profile"):
                 agent = self._registry.agents[task.assignee_name]
                 max_steps = task.max_steps or agent.manifest.max_steps
                 timeout_s = task.timeout_s or agent.manifest.timeout_s
@@ -150,11 +159,12 @@ def _build_skill_input(
     task: PlannedTask,
     results: dict[str, TaskResult],
     original_message: str,
+    registry: ToolRegistry,
 ) -> dict[str, Any]:
     if task.skill_input_template:
         payload = dict(task.skill_input_template)
     else:
-        payload = infer_skill_input(task.assignee_name, original_message)
+        payload = infer_skill_input(task.assignee_name, original_message, registry)
 
     for field, source in task.inputs_from.items():
         value = _resolve_input_source(source, results)

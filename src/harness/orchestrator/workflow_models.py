@@ -29,7 +29,7 @@ class WorkflowTaskTemplate(BaseModel):
     max_steps: int | None = None
     timeout_s: int | None = None
 
-    def resolved_assignee(self) -> tuple[Literal["agent", "skill"], str]:
+    def resolved_assignee(self) -> tuple[Literal["agent", "skill", "profile"], str]:
         if self.assignee:
             kind = self.assignee.get("kind", "agent")
             name = self.assignee.get("name", "")
