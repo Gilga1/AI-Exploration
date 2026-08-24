@@ -25,6 +25,9 @@ class ReconstructedCase:
     llm_provider: str | None
     model: str | None
     duration_ms: float | None
+    iterations: int | None = None
+    tool_calls_detail: tuple[dict[str, Any], ...] = ()
+    is_agent_trace: bool = False
 
 
 def _attribute_value(value: Any) -> Any:
@@ -73,11 +76,12 @@ def _root_input(spans: list[Span]) -> str | None:
 
 
 def reconstruct_test_case(trace_id: str, spans: list[Span]) -> ReconstructedCase:
-    """Build evaluation inputs from one trace's ordered span list."""
+    """Build evaluation inputs from one trace's ordered span list"""
 
     retriever = _first_span(spans, "retriever")
     llm = _first_span(spans, "llm")
     root = _first_span(spans, "chain")
+    tool_spans = [span for span in spans if span.kind == "tool"]
 
     retrieval_context: list[str] = []
     document_ids: list[str] = []
@@ -91,9 +95,27 @@ def reconstruct_test_case(trace_id: str, spans: list[Span]) -> ReconstructedCase
 
     tools_called = [
         str(_attribute_value(span.attributes.get("gen_ai.tool.name")) or span.name)
-        for span in spans
-        if span.kind == "tool"
+        for span in tool_spans
     ]
+    tool_calls_detail = tuple(
+        {
+            "name": str(_attribute_value(span.attributes.get("gen_ai.tool.name")) or span.name),
+            "input": str(_attribute_value(span.attributes.get("gen_ai.input")) or ""),
+            "output": str(_attribute_value(span.attributes.get("gen_ai.output")) or ""),
+        }
+        for span in tool_spans
+    )
+
+    # Agent-loop traces carry "agent.loop" in their root name and iteration
+    # count in the root's output payload.
+    is_agent_trace = root is not None and "agent." in root.name
+    iterations: int | None = None
+    if root is not None:
+        raw_iterations = _attribute_value(root.attributes.get("gen_ai.output"))
+        if isinstance(raw_iterations, dict) and isinstance(raw_iterations.get("iterations"), int):
+            iterations = raw_iterations["iterations"]
+    if iterations is None and is_agent_trace:
+        iterations = len(tool_spans) + (1 if llm is not None else 0)
 
     actual_output: str | None = None
     source = llm or root
@@ -116,6 +138,9 @@ def reconstruct_test_case(trace_id: str, spans: list[Span]) -> ReconstructedCase
         llm_provider=source.attributes.get("gen_ai.system") if source else None,
         model=source.attributes.get("gen_ai.request.model") if source else None,
         duration_ms=root.duration_ms if root is not None else None,
+        iterations=iterations,
+        tool_calls_detail=tool_calls_detail,
+        is_agent_trace=is_agent_trace,
     )
 
 

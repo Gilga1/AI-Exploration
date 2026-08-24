@@ -16,7 +16,25 @@ from sqlalchemy import select
 from app.core.config import get_settings
 from app.db.models import EvalResult, Span, Trace
 from app.db.session import session_scope
-from app.telemetry.trace_adapter import reconstruct_test_case
+from app.telemetry.trace_adapter import ReconstructedCase, reconstruct_test_case
+
+# Expected tool sequences for the Phase 5 agent golden scenarios (keyed by
+# lowercase substring of the question). None means "no tools expected".
+AGENT_EXPECTATIONS: tuple[tuple[str, list[str] | None, int], ...] = (
+    ("calculate", ["calculator"], 2),
+    ("look up", ["document_lookup"], 3),
+    ("lookup", ["document_lookup"], 3),
+)
+
+
+def expected_for_question(question: str) -> tuple[list[str] | None, int]:
+    """Return (expected_tools, max_iterations) for known agent scenarios."""
+
+    lowered = question.lower()
+    for needle, tools, max_iter in AGENT_EXPECTATIONS:
+        if needle in lowered:
+            return tools, max_iter
+    return None, 3
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +104,20 @@ def _skipped_results(reason: str) -> list[dict[str, Any]]:
     ]
 
 
+def _score_agent_case(case: ReconstructedCase, settings=None) -> list[dict[str, Any]]:
+    """Run Phase 5 agent metrics with expectations matched to the question."""
+
+    from app.evaluation.metrics.agent_metrics import run_agent_metrics
+
+    expected_tools, max_iterations = expected_for_question(case.input)
+    return run_agent_metrics(
+        case,
+        expected_tools=expected_tools,
+        expected_max_iterations=max_iterations,
+        settings=settings,
+    )
+
+
 def score_trace(trace_id: str, settings=None) -> list[dict[str, Any]]:
     """Reconstruct and score one trace; persist EvalResults keyed by trace_id.
 
@@ -113,14 +145,23 @@ def score_trace(trace_id: str, settings=None) -> list[dict[str, Any]]:
         case = reconstruct_test_case(trace_id, spans)
 
         if case.actual_output is None or not case.retrieval_context:
-            rows = _skipped_results("Trace missing answer or retrieval context.")
+            if case.is_agent_trace and case.actual_output is not None:
+                # Agent traces (e.g. pure tool calls) may legitimately have no
+                # retrieval context — score agent metrics on what we have.
+                rows = _score_agent_case(case, resolved_settings)
+            else:
+                rows = _skipped_results("Trace missing answer or retrieval context.")
         elif not resolved_settings.has_llm_judge_credentials:
             rows = _skipped_results("No LLM judge API key configured; trace captured but not judged.")
+            if case.is_agent_trace:
+                rows += _score_agent_case(case, resolved_settings)
         else:
             try:
                 rows = _run_rag_judges(case)
             except ImportError:
                 rows = _skipped_results("DeepEval is not installed in this environment.")
+            if case.is_agent_trace:
+                rows += _score_agent_case(case, resolved_settings)
 
         persisted: list[EvalResult] = []
         for row in rows:

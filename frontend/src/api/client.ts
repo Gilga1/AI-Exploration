@@ -92,3 +92,28 @@ export interface RagMetrics {
 export function getRagMetrics(perTrace = false): Promise<RagMetrics> {
   return apiRequest<RagMetrics>(`/api/v1/metrics/rag${perTrace ? "?per_trace=true" : ""}`);
 }
+
+export interface AgentMetricSummary {
+  name: string;
+  avg_score: number | null;
+  cases_scored: number;
+  status: "passed" | "failed" | "no-data";
+}
+
+export interface AgentRunRow {
+  trace_id: string;
+  tool_correctness: number | null;
+  task_success: boolean;
+  loop_efficiency: number | null;
+  classification: "efficient" | "thrashing";
+}
+
+export interface AgentMetrics {
+  summary: AgentMetricSummary[];
+  total_agent_traces_scored: number;
+  runs: AgentRunRow[];
+}
+
+export function getAgentMetrics(): Promise<AgentMetrics> {
+  return apiRequest<AgentMetrics>("/api/v1/metrics/agent");
+}

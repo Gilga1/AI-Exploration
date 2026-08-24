@@ -113,3 +113,47 @@ GOLDEN_DATASET: tuple[GoldenExample, ...] = (
 )
 
 assert len(GOLDEN_DATASET) == 15
+
+
+@dataclass(frozen=True)
+class AgentScenario:
+    """A Phase 5 agent-loop regression scenario.
+
+    Runs against /agent/invoke rather than the single-shot chain; expectations
+    cover the tool sequence and an iteration budget.
+    """
+
+    id: str
+    query: str
+    expected_tools: tuple[str, ...]
+    expected_max_iterations: int
+
+
+AGENT_GOLDEN_SCENARIOS: tuple[AgentScenario, ...] = (
+    AgentScenario(
+        "agent-calculate",
+        "calculate 144/12",
+        ("calculator",),
+        2,
+    ),
+    AgentScenario(
+        "agent-rag-question",
+        "What does Acme Orbit sell?",
+        (),
+        3,
+    ),
+    AgentScenario(
+        "agent-lookup",
+        "look up OrbitNote warranty information",
+        ("document_lookup",),
+        3,
+    ),
+    AgentScenario(
+        "agent-sync-question",
+        "How does OrbitNote sync handwritten notes?",
+        (),
+        3,
+    ),
+)
+
+assert len(AGENT_GOLDEN_SCENARIOS) == 4

@@ -105,3 +105,86 @@ def rag_metrics_for_trace(trace_id: str) -> dict[str, Any]:
                 for r in results
             ],
         }
+
+
+AGENT_METRIC_NAMES = ("ToolCorrectness", "TaskCompletion", "LoopEfficiency")
+
+
+@router.get("/agent")
+def agent_metrics() -> dict[str, Any]:
+    """Aggregate Phase 5 agent metrics: loop counts, tool accuracy, success rate.
+
+    Distinguishes efficient runs from thrashing ones by comparing each trace's
+    iteration count against its expected budget.
+    """
+
+    with session_scope() as session:
+        try:
+            score_pending_traces(limit=10)
+        except Exception:
+            pass
+
+        rows = session.execute(
+            select(
+                EvalResult.metric_name,
+                EvalResult.score,
+                EvalResult.status,
+                EvalResult.trace_id,
+            )
+        ).all()
+
+    by_metric: dict[str, list[float]] = defaultdict(list)
+    for metric_name, score, _status, _trace_id in rows:
+        if score is not None:
+            by_metric[metric_name].append(score)
+
+    summary = []
+    for name in AGENT_METRIC_NAMES:
+        scores = by_metric.get(name, [])
+        summary.append(
+            {
+                "name": name,
+                "avg_score": round(sum(scores) / len(scores), 4) if scores else None,
+                "cases_scored": len(scores),
+                "status": (
+                    "passed" if scores and sum(scores) / len(scores) >= 0.5
+                    else ("failed" if scores else "no-data")
+                ),
+            }
+        )
+
+    # Per-trace efficiency classification for AgentLoopChart.
+    tool_scores: dict[str, float] = {}
+    completion_by_trace: dict[str, float] = {}
+    loop_by_trace: dict[str, float] = {}
+    for metric_name, score, _status, trace_id in rows:
+        if score is None:
+            continue
+        if metric_name == "ToolCorrectness":
+            tool_scores[trace_id] = score
+        elif metric_name == "TaskCompletion":
+            completion_by_trace[trace_id] = score
+        elif metric_name == "LoopEfficiency":
+            loop_by_trace[trace_id] = score
+
+    runs = [
+        {
+            "trace_id": trace_id,
+            "tool_correctness": tool_scores.get(trace_id),
+            "task_success": completion_by_trace.get(trace_id, 0.0) >= 0.5,
+            "loop_efficiency": loop_by_trace.get(trace_id),
+            "classification": (
+                "efficient"
+                if (completion_by_trace.get(trace_id, 0.0) >= 0.5
+                    and (loop_by_trace.get(trace_id) or 0.0) >= 0.75)
+                else "thrashing"
+            ),
+        }
+        for trace_id in sorted(tool_scores | completion_by_trace | loop_by_trace)
+    ]
+
+    return {
+        "summary": summary,
+        "total_agent_traces_scored": len(runs),
+        "runs": runs,
+    }
