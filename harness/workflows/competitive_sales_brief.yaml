@@ -1,0 +1,34 @@
+name: competitive_sales_brief
+description: Research a competitor and analyze advisor sales, then synthesize.
+match_tags:
+  - competitor
+  - sales
+  - advisor
+match_patterns:
+  - "(?i)competitor.+advisor"
+  - "(?i)research.+sales"
+priority: 10
+variables:
+  competitor:
+    extract: "competitor\\s+([A-Za-z0-9][\\w .'-]+?)(?=\\s+and\\b|\\s+sales\\b|\\s*[,.]|$)"
+    default: "the competitor"
+  advisor_name:
+    extract: "advisor\\s+([A-Za-z][A-Za-z .'-]+?)(?=\\s+sales\\b|\\s+product\\b|\\s*[,.]|$)"
+    default: "the advisor"
+failure_policy: continue
+tasks:
+  - task_id: t1
+    title: "Research {{competitor}}"
+    assignee:
+      kind: agent
+      name: competitor_research
+    objective: "Research competitor {{competitor}} and gather a positioning brief."
+    fallback_hint: "public information about {{competitor}}"
+  - task_id: t2
+    title: "Analyze {{advisor_name}} sales"
+    assignee:
+      kind: agent
+      name: agentic_analyzer
+    objective: "Analyze advisor {{advisor_name}} product sales and trends."
+    depends_on: []
+    fallback_hint: "sales figures for {{advisor_name}}"

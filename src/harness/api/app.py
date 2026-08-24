@@ -130,6 +130,17 @@ def create_app(settings: HarnessSettings | None = None) -> FastAPI:
             "events": events,
         }
 
+    @app.get("/admin/workflows")
+    async def admin_workflows() -> dict:
+        state = get_bootstrap_state()
+        workflows = state.workflow_registry.list_summaries()
+        return {
+            "workflows": workflows,
+            "count": len(workflows),
+            "planner_mode": state.settings.orchestration_planner,
+            "match_threshold": state.settings.orchestration_workflow_match_threshold,
+        }
+
     @app.get("/admin/metrics")
     async def admin_metrics() -> dict:
         state = get_bootstrap_state()

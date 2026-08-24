@@ -55,9 +55,8 @@ class HarnessSettings(BaseSettings):
     orchestration_failure_policy: Literal["continue", "fail_fast", "retry_once"] = "continue"
     orchestration_plans_db_path: str = "data/harness_plans.db"
     orchestration_alert_webhook_url: str | None = None
-    orchestration_alert_on_statuses: list[str] = Field(
-        default_factory=lambda: ["partial_success", "failure"]
-    )
+    orchestration_planner: Literal["auto", "llm", "template", "hybrid"] = "auto"
+    orchestration_workflow_match_threshold: float = 0.6
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> HarnessSettings:

@@ -30,6 +30,8 @@ orchestration_fast_path_single_task: true
 orchestration_parallel: true
 orchestration_max_parallel: 3
 orchestration_failure_policy: continue
+orchestration_planner: auto
+orchestration_workflow_match_threshold: 0.6
 orchestration_plans_db_path: data/harness_plans.db
 host: 0.0.0.0
 port: 8000

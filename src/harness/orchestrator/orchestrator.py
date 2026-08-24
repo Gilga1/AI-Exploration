@@ -59,11 +59,16 @@ class Orchestrator:
         self.approval_store = approval_store
         self.connector_registry = connector_registry
         self._plan_store = None
+        self._workflow_registry = None
         self._plan_runner = self._build_plan_runner()
         self.graph = self._compile_graph()
 
     def set_plan_store(self, plan_store: object) -> None:
         self._plan_store = plan_store
+        self._plan_runner = self._build_plan_runner()
+
+    def set_workflow_registry(self, workflow_registry: object) -> None:
+        self._workflow_registry = workflow_registry
         self._plan_runner = self._build_plan_runner()
 
     def _build_plan_runner(self) -> PlanRunner:
@@ -75,6 +80,7 @@ class Orchestrator:
             capability_index=self.router._index,
             config=config,
             settings=self.settings,
+            workflows=getattr(self, "_workflow_registry", None),
         )
         task_executor = TaskExecutor(
             registry=self.registry,

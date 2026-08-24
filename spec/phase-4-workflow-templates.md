@@ -1,6 +1,6 @@
 # Phase 4 — Workflow Templates
 
-**Status:** Planned  
+**Status:** Implemented  
 **Depends on:** Phase 1
 
 ---
@@ -51,7 +51,7 @@ Note: `synthesizer` is still appended automatically by the orchestrator.
 
 ## Acceptance criteria
 
-- [ ] Templates load at bootstrap
-- [ ] Matcher selects template when tags align
-- [ ] Variables extracted from user message (regex or LLM)
-- [ ] Plan HITL still required before execution
+- [x] Templates load at bootstrap
+- [x] Matcher selects template when tags align
+- [x] Variables extracted from user message (regex or LLM)
+- [x] Plan HITL still required before execution

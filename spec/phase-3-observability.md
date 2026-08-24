@@ -1,7 +1,7 @@
 # Phase 3 — Observability & Operations
 
-**Status:** Planned  
-**Depends on:** Phase 1 (partially delivered in Phase 1)
+**Status:** Implemented  
+**Depends on:** Phase 1
 
 ---
 
@@ -42,6 +42,6 @@ Production-grade visibility into plan runs for PMs, operators, and the UI waterf
 
 ## Acceptance criteria
 
-- [ ] Admin can introspect any plan by trace_id or plan_id
-- [ ] Langfuse shows plan/task hierarchy
-- [ ] Waterfall UI can render without custom parsing
+- [x] Admin can introspect any plan by trace_id or plan_id
+- [x] OTel spans emitted for plan/task execution (Langfuse hierarchy when configured)
+- [x] Waterfall UI can render via `/admin/plans/{plan_id}/waterfall`

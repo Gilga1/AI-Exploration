@@ -52,6 +52,6 @@ async def execute_plan_dag(plan, executor, max_parallel=3):
 
 ## Acceptance criteria
 
-- [ ] Independent tasks run concurrently
-- [ ] Dependent tasks wait for all upstream success
-- [ ] Failure policy honored per configuration
+- [x] Independent tasks run concurrently
+- [x] Dependent tasks wait for all upstream success
+- [x] Failure policy honored per configuration

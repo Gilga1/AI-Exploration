@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -11,6 +11,7 @@ from harness.config.models import ConfigPlane
 from harness.core.request import IncomingRequest
 from harness.llm.factory import build_chat_model
 from harness.orchestrator.plan_models import ExecutionPlan, PlannedTask
+from harness.orchestrator.workflow_registry import PlannerMode, WorkflowRegistry
 from harness.registry.registry import ToolRegistry
 from harness.routing.capability_index import CapabilityIndex
 from harness.settings import HarnessSettings
@@ -24,22 +25,38 @@ class Planner:
         capability_index: CapabilityIndex,
         config: ConfigPlane,
         settings: HarnessSettings,
+        workflows: WorkflowRegistry | None = None,
     ) -> None:
         self._registry = registry
         self._index = capability_index
         self._config = config
         self._settings = settings
+        self._workflows = workflows
 
     def create_plan(self, request: IncomingRequest) -> ExecutionPlan:
+        mode: PlannerMode = self._settings.orchestration_planner  # type: ignore[assignment]
+        last_template_name: str | None = None
+
+        if self._workflows is not None and mode in ("auto", "template", "hybrid"):
+            plan = self._workflows.try_build_plan(request.message, mode=mode)
+            if plan is not None:
+                plan.rationale = self._annotate_rationale(plan.rationale, mode=mode)
+                return plan
+            if mode == "template":
+                return _empty_template_plan(request.message)
+
+        if mode == "template":
+            return _empty_template_plan(request.message)
+
         if self._settings.force_stub_models:
-            return _stub_plan(request.message, self._registry, self._settings)
+            return _stub_plan(request.message, self._registry, self._settings, mode=mode)
 
         model_cfg = next(
             (m for m in self._config.models.models if m.name == "fast_router"),
             None,
         )
         if model_cfg is None or model_cfg.provider == "stub":
-            return _heuristic_plan(request.message, self._registry, self._settings)
+            return _heuristic_plan(request.message, self._registry, self._settings, mode=mode)
 
         return _llm_plan(
             request.message,
@@ -47,7 +64,24 @@ class Planner:
             config=self._config,
             settings=self._settings,
             model_name="fast_router",
+            mode=mode,
         )
+
+    def _annotate_rationale(self, rationale: str, *, mode: PlannerMode) -> str:
+        if mode == "hybrid":
+            return f"{rationale} (hybrid: template structure + LLM objective refinement)"
+        if mode == "auto":
+            return f"{rationale} (auto-selected workflow template)"
+        return rationale
+
+
+def _empty_template_plan(message: str) -> ExecutionPlan:
+    return ExecutionPlan(
+        plan_id=uuid.uuid4().hex,
+        tasks=[],
+        rationale="No workflow template matched the request.",
+        status="awaiting_approval",
+    )
 
 
 def _llm_plan(
@@ -57,6 +91,7 @@ def _llm_plan(
     config: ConfigPlane,
     settings: HarnessSettings,
     model_name: str,
+    mode: PlannerMode,
 ) -> ExecutionPlan:
     model_cfg = next((m for m in config.models.models if m.name == model_name), None)
     assert model_cfg is not None
@@ -93,14 +128,29 @@ def _llm_plan(
     )
     content = response.content if isinstance(response.content, str) else str(response.content)
     parsed = _parse_json(content)
-    return _plan_from_payload(parsed, registry, settings, message)
+    plan = _plan_from_payload(parsed, registry, settings, message)
+    plan.rationale = f"{plan.rationale} (planner={mode})"
+    return plan
 
 
-def _heuristic_plan(message: str, registry: ToolRegistry, settings: HarnessSettings) -> ExecutionPlan:
-    return _stub_plan(message, registry, settings)
+def _heuristic_plan(
+    message: str,
+    registry: ToolRegistry,
+    settings: HarnessSettings,
+    *,
+    mode: PlannerMode,
+) -> ExecutionPlan:
+    plan = _stub_plan(message, registry, settings, mode=mode)
+    return plan
 
 
-def _stub_plan(message: str, registry: ToolRegistry, settings: HarnessSettings) -> ExecutionPlan:
+def _stub_plan(
+    message: str,
+    registry: ToolRegistry,
+    settings: HarnessSettings,
+    *,
+    mode: PlannerMode = "auto",
+) -> ExecutionPlan:
     lowered = message.lower()
     tasks: list[PlannedTask] = []
     if any(word in lowered for word in ("competitor", "research")):
@@ -160,7 +210,7 @@ def _stub_plan(message: str, registry: ToolRegistry, settings: HarnessSettings) 
     return ExecutionPlan(
         plan_id=plan_id,
         tasks=tasks,
-        rationale="Stub/heuristic plan based on message keywords and registry.",
+        rationale=f"Stub/heuristic plan (planner={mode}).",
         status="awaiting_approval",
     )
 

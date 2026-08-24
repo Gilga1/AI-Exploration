@@ -7,6 +7,7 @@ from harness.hitl.store import ApprovalStore
 from harness.memory.manager import MemoryManager
 from harness.orchestrator.orchestrator import Orchestrator
 from harness.orchestrator.plan_store import PlanStore
+from harness.orchestrator.workflow_registry import WorkflowRegistry
 from harness.registry.data_sources import DataSourceRegistry
 from harness.registry.registry import ToolRegistry
 from harness.routing.capability_index import CapabilityIndex
@@ -28,4 +29,5 @@ class BootstrapState:
     orchestrator: Orchestrator
     approval_store: ApprovalStore
     plan_store: PlanStore
+    workflow_registry: WorkflowRegistry
     imported_modules: list[str]
