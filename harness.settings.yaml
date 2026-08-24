@@ -21,5 +21,11 @@ approvals_db_path: data/harness_approvals.db
 force_stub_models: false
 langfuse_enabled: true
 mcp_enabled: true
+orchestration_mode: auto
+orchestration_require_plan_approval: true
+orchestration_max_tasks: 5
+orchestration_synthesizer_agent: synthesizer
+orchestration_continue_on_failure: true
+orchestration_fast_path_single_task: true
 host: 0.0.0.0
 port: 8000

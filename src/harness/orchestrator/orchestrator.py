@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import uuid
 from typing import Any, TypedDict
 
@@ -18,7 +17,11 @@ from harness.routing.decision import RoutingDecision
 from harness.routing.router import TieredRouter
 from harness.settings import HarnessSettings
 from harness.telemetry.bus import TelemetryBus
-from harness.telemetry.instrumentation import invoke_tool_with_telemetry
+from harness.orchestrator.complexity import should_use_multi_agent
+from harness.orchestrator.plan_runner import PlanRunner
+from harness.orchestrator.planner import Planner
+from harness.orchestrator.skill_input import infer_skill_input
+from harness.orchestrator.task_executor import TaskExecutor
 
 
 class OrchestratorState(TypedDict, total=False):
@@ -55,7 +58,34 @@ class Orchestrator:
         self.settings = settings
         self.approval_store = approval_store
         self.connector_registry = connector_registry
+        self._plan_runner = self._build_plan_runner()
         self.graph = self._compile_graph()
+
+    def _build_plan_runner(self) -> PlanRunner:
+        from harness.config.loader import load_config_plane
+
+        config = load_config_plane(self.settings.config_root)
+        planner = Planner(
+            registry=self.registry,
+            capability_index=self.router._index,
+            config=config,
+            settings=self.settings,
+        )
+        task_executor = TaskExecutor(
+            registry=self.registry,
+            connectors=self.connector_registry.connectors if self.connector_registry else {},
+            telemetry=self.telemetry,
+            settings=self.settings,
+        )
+        return PlanRunner(
+            registry=self.registry,
+            planner=planner,
+            task_executor=task_executor,
+            approval_store=self.approval_store,
+            telemetry=self.telemetry,
+            settings=self.settings,
+            config=config,
+        )
 
     def _compile_graph(self):
         graph: StateGraph = StateGraph(OrchestratorState)
@@ -84,8 +114,29 @@ class Orchestrator:
     async def handle(self, request: IncomingRequest) -> OrchestratorResult:
         trace_id = uuid.uuid4().hex
         thread_id = request.thread_id or trace_id
-        config = {"configurable": {"thread_id": thread_id}}
         root_span_id = self.telemetry.new_span_id()
+
+        candidates = self.router._index.search(request.message, k=self.settings.routing_top_k)
+        if should_use_multi_agent(
+            request.message,
+            self.settings,
+            request=request,
+            candidates=candidates,
+        ):
+            with self.telemetry.span(
+                "invoke_plan",
+                trace_id=trace_id,
+                span_id=root_span_id,
+                otel_attributes={"harness.operation": "multi_agent_plan"},
+            ):
+                return await self._plan_runner.start(
+                    request,
+                    trace_id=trace_id,
+                    thread_id=thread_id,
+                    root_span_id=root_span_id,
+                )
+
+        config = {"configurable": {"thread_id": thread_id}}
 
         with self.telemetry.span(
             "invoke_agent",
@@ -114,9 +165,10 @@ class Orchestrator:
                 "kind": final_state["routing"].kind,
                 "confidence": final_state["routing"].confidence,
                 "rationale": final_state["routing"].rationale,
+                "mode": "single",
             }
             if final_state.get("routing")
-            else {},
+            else {"mode": "single"},
             output=final_state.get("skill_output") or final_state.get("agent_output"),
             artifacts=final_state.get("artifacts", []),
             events=self.telemetry.list_events_for_trace(trace_id),
@@ -132,6 +184,13 @@ class Orchestrator:
                 thread_id=request.thread_id,
                 status="failure",
                 message=f"No pending approval for task {request.task_id!r}",
+            )
+
+        if approval.agent_name == "__plan__":
+            return await self._plan_runner.resume(
+                request,
+                approval,
+                root_span_id=self.telemetry.new_span_id(),
             )
 
         agent = self.registry.agents.get(approval.agent_name)
@@ -219,7 +278,7 @@ class Orchestrator:
                 "message": f"Could not dispatch skill {routing.selected!r}.",
             }
 
-        payload_data = request.skill_input or _infer_skill_input(routing.selected, request.message)
+        payload_data = request.skill_input or infer_skill_input(routing.selected, request.message)
         payload = skill.validate_input(payload_data)
         artifacts = ArtifactStore()
         context = RunContext(
@@ -343,20 +402,6 @@ class Orchestrator:
         return {"message": state.get("message", "Done.")}
 
 
-def _infer_skill_input(skill_name: str, message: str) -> dict[str, Any]:
-    if skill_name == "markdown_to_pdf":
-        title_match = re.search(r"title[:\s]+(.+)", message, flags=re.IGNORECASE)
-        markdown = message
-        if "into a pdf" in message.lower():
-            markdown = re.sub(r"(?i).*?(notes|markdown)[:\s]*", "", message, count=1)
-            markdown = re.sub(r"(?i)\s*into a pdf.*", "", markdown).strip()
-        payload: dict[str, Any] = {"markdown": markdown or message}
-        if title_match:
-            payload["title"] = title_match.group(1).strip()
-        return payload
-    return {"message": message}
-
-
 def _format_agent_message(agent_name: str, output: dict[str, Any] | None) -> str:
     if not output:
         return f"Agent {agent_name} completed."
@@ -372,4 +417,6 @@ def _format_agent_message(agent_name: str, output: dict[str, Any] | None) -> str
         )
     if "response" in output:
         return str(output["response"])
+    if "completed_tasks" in output:
+        return str(output.get("response") or output)
     return f"Agent {agent_name} completed with results."

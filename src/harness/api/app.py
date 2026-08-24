@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 
 from harness.bootstrap import BootstrapState, bootstrap
 from harness.core.request import IncomingRequest, OrchestratorResult, ResumeRequest
@@ -81,5 +84,25 @@ def create_app(settings: HarnessSettings | None = None) -> FastAPI:
     async def resume_request(request: ResumeRequest) -> OrchestratorResult:
         state = get_bootstrap_state()
         return await state.orchestrator.resume(request)
+
+    @app.get("/v1/runs/{trace_id}/events")
+    async def stream_run_events(trace_id: str) -> StreamingResponse:
+        state = get_bootstrap_state()
+
+        async def event_generator() -> AsyncIterator[str]:
+            seen = 0
+            idle_ticks = 0
+            while idle_ticks < 20:
+                events = state.telemetry.list_events_for_trace(trace_id)
+                if len(events) > seen:
+                    for event in events[seen:]:
+                        yield f"data: {json.dumps(event)}\n\n"
+                    seen = len(events)
+                    idle_ticks = 0
+                else:
+                    idle_ticks += 1
+                await asyncio.sleep(0.5)
+
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
 
     return app

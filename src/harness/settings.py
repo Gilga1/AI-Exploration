@@ -4,6 +4,7 @@ from pathlib import Path
 
 import yaml
 from pydantic import Field
+from typing import Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -43,6 +44,12 @@ class HarnessSettings(BaseSettings):
     mcp_enabled: bool = True
     host: str = "0.0.0.0"
     port: int = 8000
+    orchestration_mode: Literal["auto", "single", "multi"] = "auto"
+    orchestration_require_plan_approval: bool = True
+    orchestration_max_tasks: int = 5
+    orchestration_synthesizer_agent: str = "synthesizer"
+    orchestration_continue_on_failure: bool = True
+    orchestration_fast_path_single_task: bool = True
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> HarnessSettings:

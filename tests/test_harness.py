@@ -23,6 +23,7 @@ def _harness_settings(**kwargs) -> HarnessSettings:
         connector_health_check=False,
         force_stub_models=True,
         langfuse_enabled=False,
+        orchestration_mode="single",
     )
     defaults.update(kwargs)
     return HarnessSettings(**defaults)

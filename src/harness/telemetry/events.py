@@ -69,3 +69,23 @@ class LLMCallEvent(TraceEventBase):
     capture_content: bool = False
     prompt_preview: str | None = None
     completion_preview: str | None = None
+
+
+class PlanEvent(TraceEventBase):
+    event_type: str = "plan"
+    plan_id: str
+    action: Literal["created", "approved", "rejected", "completed", "partial", "failed"]
+    display_message: str = ""
+    plan_snapshot: dict[str, Any] = Field(default_factory=dict)
+
+
+class TaskEvent(TraceEventBase):
+    event_type: str = "task"
+    plan_id: str = ""
+    task_id: str
+    title: str
+    assignee_kind: str
+    assignee_name: str
+    action: Literal["started", "completed", "failed"]
+    display_message: str = ""
+    error: str | None = None

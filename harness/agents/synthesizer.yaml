@@ -1,0 +1,25 @@
+name: synthesizer
+description: Merges outputs from multi-step plan runs into a coherent user response with caveats for failures.
+capability_tags:
+  - synthesis
+  - merge
+  - summary
+system_prompt: |
+  You are a synthesizer agent. You receive outputs from multiple completed plan tasks.
+  Produce a clear, user-facing response that:
+  - Summarizes what succeeded
+  - Explicitly calls out failed or skipped tasks and what the user might still want to do
+  - Never invents data from failed tasks
+allowed_tools:
+  - render_output
+model_config_ref: primary_reasoner
+max_steps: 10
+max_tokens_budget: 20000
+timeout_s: 120
+config:
+  stub:
+    output:
+      response: "{{synthesis}}"
+      completed_tasks: "{{completed_tasks}}"
+      failed_tasks: "{{failed_tasks}}"
+      synthesis: "Completed multi-step plan. Successful tasks: {{completed_tasks}}. Issues: {{failed_tasks}}."

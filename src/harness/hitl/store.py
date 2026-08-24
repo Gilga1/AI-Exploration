@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -15,7 +15,7 @@ class PendingApproval:
     agent_name: str
     trace_id: str
     interrupt_payload: dict[str, Any]
-    created_at: datetime
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 class ApprovalStore:
