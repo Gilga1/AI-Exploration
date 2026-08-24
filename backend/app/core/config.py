@@ -27,6 +27,11 @@ class Settings(BaseSettings):
             "APP_OTEL_EXPORTER_OTLP_ENDPOINT",
         ),
     )
+    otel_console_exporter: bool = False
+    database_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("DATABASE_URL", "APP_DATABASE_URL"),
+    )
     rag_embedding_model: str | None = None
     rag_embedding_dimension: int = 256
     rag_retrieval_k: int = 3

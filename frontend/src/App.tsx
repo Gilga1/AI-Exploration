@@ -3,6 +3,7 @@ import { NavLink, Route as RouterRoute, Routes } from "react-router-dom";
 
 import Dashboard from "./pages/Dashboard";
 import Evaluations from "./pages/Evaluations";
+import TraceDetail from "./pages/TraceDetail";
 import Traces from "./pages/Traces";
 
 const navigation = [
@@ -41,6 +42,7 @@ export default function App() {
         <Routes>
           <RouterRoute element={<Dashboard />} path="/" />
           <RouterRoute element={<Traces />} path="/traces" />
+          <RouterRoute element={<TraceDetail />} path="/traces/:traceId" />
           <RouterRoute element={<Evaluations />} path="/evaluations" />
         </Routes>
       </main>

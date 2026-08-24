@@ -11,12 +11,14 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import Any, Protocol
+from uuid import UUID, uuid4
 
 from app.core.config import Settings, get_settings
 from app.rag.corpus import CORPUS
 from app.rag.embeddings import get_embedding_model
 from app.rag.retriever import RagRetriever
 from app.rag.vectorstore import InMemoryVectorStore, RagDocument
+from app.telemetry.callback_bridge import LangChainOTelCallbackHandler
 
 try:  # LangChain is optional at import time for the offline fallback.
     from langchain_core.runnables import RunnableLambda
@@ -125,10 +127,19 @@ def get_chat_model(settings: Settings) -> ChatModel:
 class SingleShotRAGChain:
     """Retrieve relevant context once and ask one chat model to answer once."""
 
-    def __init__(self, retriever: RagRetriever, chat_model: ChatModel) -> None:
+    def __init__(
+        self,
+        retriever: RagRetriever,
+        chat_model: ChatModel,
+        callback_handler: LangChainOTelCallbackHandler | None = None,
+    ) -> None:
         self.retriever = retriever
         self.chat_model = chat_model
-        self._runnable = RunnableLambda(self._run_once) if RunnableLambda else None
+        # The bridge is deliberately attached to this simple Phase 1 chain. It
+        # gives the eventual agent loop no special treatment and keeps the
+        # LangChain/OTel integration isolated in one callback implementation.
+        self.callback_handler = callback_handler or LangChainOTelCallbackHandler()
+        self._runnable = RunnableLambda(self._run_with_trace) if RunnableLambda else None
 
     def invoke(self, question: str) -> RAGResult:
         """Execute the LangChain-wrapped single-shot RAG flow."""
@@ -137,13 +148,65 @@ class SingleShotRAGChain:
             raise ValueError("question must not be empty")
         if self._runnable is not None:
             return self._runnable.invoke(question)
-        return self._run_once(question)
+        return self._run_with_trace(question)
 
-    def _run_once(self, question: str) -> RAGResult:
-        documents = self.retriever.invoke(question)
+    def _run_with_trace(self, question: str) -> RAGResult:
+        """Execute the fixed chain while emitting chain/retriever/LLM spans."""
+
+        chain_run_id = uuid4()
+        self.callback_handler.on_chain_start(
+            {"name": "phase-1.retrieve-generate"},
+            {"question": question},
+            run_id=chain_run_id,
+        )
+        try:
+            result = self._run_once(question, chain_run_id)
+        except Exception as exc:
+            self.callback_handler.on_chain_error(exc, run_id=chain_run_id)
+            raise
+        self.callback_handler.on_chain_end(
+            {
+                "answer": result.answer,
+                "source_ids": result.source_ids,
+                "llm_provider": result.llm_provider,
+            },
+            run_id=chain_run_id,
+        )
+        return result
+
+    def _run_once(self, question: str, chain_run_id: UUID) -> RAGResult:
+        retriever_run_id = uuid4()
+        self.callback_handler.on_retriever_start(
+            {"name": type(self.retriever).__name__},
+            question,
+            run_id=retriever_run_id,
+            parent_run_id=chain_run_id,
+        )
+        try:
+            documents = self.retriever.invoke(question)
+        except Exception as exc:
+            self.callback_handler.on_retriever_error(exc, run_id=retriever_run_id)
+            raise
+        self.callback_handler.on_retriever_end(documents, run_id=retriever_run_id)
+
         contexts = [document.page_content for document in documents]
         prompt = self._build_prompt(question, contexts)
-        response = self.chat_model.invoke(prompt)
+        llm_run_id = uuid4()
+        self.callback_handler.on_llm_start(
+            {
+                "name": type(self.chat_model).__name__,
+                "provider": self.chat_model.provider_name,
+            },
+            [prompt],
+            run_id=llm_run_id,
+            parent_run_id=chain_run_id,
+        )
+        try:
+            response = self.chat_model.invoke(prompt)
+        except Exception as exc:
+            self.callback_handler.on_llm_error(exc, run_id=llm_run_id)
+            raise
+        self.callback_handler.on_llm_end(response, run_id=llm_run_id)
         answer = self._response_text(response)
         return RAGResult(
             question=question,
@@ -183,4 +246,8 @@ def build_phase_one_chain(settings: Settings | None = None) -> SingleShotRAGChai
         CORPUS, get_embedding_model(resolved_settings)
     )
     retriever = RagRetriever(vector_store, resolved_settings.rag_retrieval_k)
-    return SingleShotRAGChain(retriever, get_chat_model(resolved_settings))
+    return SingleShotRAGChain(
+        retriever,
+        get_chat_model(resolved_settings),
+        callback_handler=LangChainOTelCallbackHandler(),
+    )
