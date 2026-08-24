@@ -1,6 +1,7 @@
 """FastAPI entrypoint for the Agentic RAG Evaluation Harness."""
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 try:
     from opentelemetry import trace
@@ -12,6 +13,7 @@ except ImportError:  # Allows the basic API shell to boot before extras are inst
     trace = None
 
 from app.core.config import get_settings
+from app.api.v1.eval_routes import router as eval_router
 
 settings = get_settings()
 _telemetry_configured = False
@@ -54,6 +56,14 @@ def configure_telemetry() -> None:
 configure_telemetry()
 
 app = FastAPI(title=settings.app_name)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_allow_origins,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.include_router(eval_router, prefix="/api/v1")
 
 
 @app.get("/health")

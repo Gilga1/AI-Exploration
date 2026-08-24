@@ -1,0 +1,23 @@
+name: Phase 1 RAG evaluation
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/eval.yml"
+
+jobs:
+  deepeval:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install backend and evaluation dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+      - name: Run golden RAG DeepEval suite
+        run: deepeval test run tests/eval/test_rag_metrics.py
