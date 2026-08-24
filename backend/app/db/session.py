@@ -8,6 +8,7 @@ keeps the hot path compact and avoids exposing half-finished trace records.
 from __future__ import annotations
 
 import os
+import threading
 from contextlib import contextmanager
 from datetime import datetime
 from functools import lru_cache
@@ -39,8 +40,28 @@ def get_engine() -> Engine:
     """Return the process-wide synchronous SQLAlchemy engine."""
 
     url = get_database_url()
-    connect_args: dict[str, Any] = {"check_same_thread": False} if url.startswith("sqlite") else {}
-    return create_engine(url, future=True, pool_pre_ping=not url.startswith("sqlite"), connect_args=connect_args)
+    is_sqlite = url.startswith("sqlite")
+    # SQLite: allow cross-thread reuse and tolerate brief write contention
+    # from FastAPI's threadpool / background eval tasks (L2 fix). Without a
+    # busy timeout, concurrent spans are silently dropped by callers that
+    # swallow persistence errors.
+    connect_args: dict[str, Any] = (
+        {"check_same_thread": False, "timeout": 30} if is_sqlite else {}
+    )
+    engine = create_engine(
+        url, future=True, pool_pre_ping=not is_sqlite, connect_args=connect_args
+    )
+    if is_sqlite:
+        from sqlalchemy import event
+
+        @event.listens_for(engine, "connect")
+        def _set_sqlite_pragma(dbapi_connection: Any, _record: Any) -> None:
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=30000")
+            cursor.close()
+
+    return engine
 
 
 @lru_cache(maxsize=1)
@@ -50,10 +71,22 @@ def get_session_factory() -> sessionmaker[Session]:
     return sessionmaker(bind=get_engine(), autoflush=False, autocommit=False, expire_on_commit=False)
 
 
-def init_db() -> None:
-    """Create Phase 2 tables for local development and test environments."""
+_init_lock = threading.Lock()
+_init_done = False
 
-    Base.metadata.create_all(bind=get_engine())
+
+def init_db() -> None:
+    """Create tables once per process (L2 fix: create_all on every span caused
+    concurrent lock-upgrade deadlocks on SQLite)."""
+
+    global _init_done
+    if _init_done:
+        return
+    with _init_lock:
+        if _init_done:
+            return
+        Base.metadata.create_all(bind=get_engine())
+        _init_done = True
 
 
 @contextmanager

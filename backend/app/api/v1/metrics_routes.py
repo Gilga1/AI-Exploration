@@ -6,13 +6,12 @@ from collections import defaultdict
 from typing import Any
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.core.auth import require_api_key
 from app.db.models import EvalResult, Trace
 from app.db.session import session_scope
 from app.evaluation.alerting import check_score_thresholds
-from app.evaluation.runners.realtime_worker import score_pending_traces
 
 router = APIRouter(prefix="/metrics", tags=["metrics"], dependencies=[Depends(require_api_key)])
 
@@ -22,12 +21,6 @@ def rag_metrics(per_trace: bool = False) -> dict[str, Any]:
     """Aggregate RAG judge scores; optionally include per-trace breakdowns."""
 
     with session_scope() as session:
-        # Opportunistic backstop: score anything the worker missed (respects sampling).
-        try:
-            score_pending_traces(limit=10)
-        except Exception:  # Metrics endpoint must never fail because of the worker.
-            pass
-
         rows = session.execute(
             select(
                 EvalResult.metric_name,
@@ -130,11 +123,6 @@ def agent_metrics() -> dict[str, Any]:
     """
 
     with session_scope() as session:
-        try:
-            score_pending_traces(limit=10)
-        except Exception:
-            pass
-
         rows = session.execute(
             select(
                 EvalResult.metric_name,

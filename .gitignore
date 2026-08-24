@@ -34,3 +34,7 @@ frontend/dist/
 
 # Docker data
 postgres_data/
+
+# Local dev databases
+*.db
+*.sqlite3

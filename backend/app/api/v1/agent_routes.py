@@ -4,12 +4,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel, Field
 
+from app.core.auth import require_api_key
 from app.core.config import get_settings
 
-router = APIRouter(prefix="/agent", tags=["agent"])
+router = APIRouter(
+    prefix="/agent",
+    tags=["agent"],
+    # M4: /invoke fans out to paid LLM calls — never expose it unauthenticated.
+    dependencies=[Depends(require_api_key)],
+)
 
 
 class AgentInvokeRequest(BaseModel):
@@ -61,11 +67,6 @@ def list_tools() -> list[dict[str, str]]:
 def invoke_agent(request: AgentInvokeRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
     """Run one full agent loop; tracing and async eval are side-effect free."""
 
-    from sqlalchemy import select
-
-    from app.core.config import get_settings
-    from app.db.models import EvalResult, Trace
-    from app.db.session import session_scope
     from app.evaluation.runners.realtime_worker import score_trace, should_sample
 
     app_graph = get_agent_app()
@@ -80,14 +81,14 @@ def invoke_agent(request: AgentInvokeRequest, background_tasks: BackgroundTasks)
         "tool_calls": [],
         "intermediate_notes": [],
         "answer": None,
+        # H1/H2 fix: per-invocation trace identity lives in the graph state, so
+        # concurrent requests can never attribute spans to each other's traces.
+        "root_run_id": None,
+        "trace_id": None,
     }
     final_state = app_graph.invoke(initial_state)
 
-    # The root span closed last, so the newest trace is this invocation's.
-    with session_scope() as session:
-        trace_id = session.scalars(
-            select(Trace.id).order_by(Trace.start_time.desc()).limit(1)
-        ).first()
+    trace_id = final_state.get("trace_id")
 
     settings = get_settings()
     if trace_id and should_sample(trace_id, rate=settings.eval_sampling_rate):

@@ -1,15 +1,16 @@
 """The Phase 4 LangGraph StateGraph: Planner → Decide → Retrieve/Tool → Generate.
 
-The loop is intentionally deterministic when no LLM key is configured: the
-planner inspects what it has seen so far (context? tool results? iterations?)
-and routes accordingly. With a configured chat model, the same graph can be
-upgraded to LLM-driven decisions without changing the wiring or telemetry.
+The routing policy (which tool to call, when to retrieve, when to generate) is
+a deterministic guardrail; every answer and judge score comes from the LLM.
+Run-scoped trace identity lives in AgentState, so concurrent invocations each
+get their own OTel root span and trace id.
 """
 
 from __future__ import annotations
 
 import re
 from typing import Any, Literal
+from uuid import UUID
 
 from app.agent.state import AgentState
 from app.agent.tools.registry import REGISTRY
@@ -51,21 +52,30 @@ class AgentNodes:
         self.retriever = RagRetriever(vector_store, self.settings.rag_retrieval_k)
         self.chat_model = get_chat_model(self.settings)
         self.callback_handler = LangChainOTelCallbackHandler()
-        self._root_run_id = None
+
+    # ---------------------------------------------------------------- helpers
+    def _open_root_span(self, state: AgentState) -> dict[str, Any] | None:
+        """Open this invocation's root chain span exactly once, into state."""
+
+        if state.get("root_run_id") is not None:
+            return None
+        run_id = self.callback_handler.new_run_id()
+        self.callback_handler.on_chain_start(
+            {"name": "agent.loop"},
+            {"question": state["question"]},
+            run_id=run_id,
+        )
+        trace_id = self.callback_handler.last_trace_id(str(run_id))
+        return {"root_run_id": str(run_id), "trace_id": trace_id}
 
     # ------------------------------------------------------------------ nodes
     def planner(self, state: AgentState) -> dict[str, Any]:
         """Decide the next action from working memory (deterministic policy)."""
 
-        # First planner visit of an invocation: open the root chain span that
-        # parents every node span so the whole loop shares one trace.
-        if self._root_run_id is None:
-            self._root_run_id = self.callback_handler.new_run_id()
-            self.callback_handler.on_chain_start(
-                {"name": "agent.loop"},
-                {"question": state["question"]},
-                run_id=self._root_run_id,
-            )
+        updates: dict[str, Any] = {}
+        root_update = self._open_root_span(state)
+        if root_update:
+            updates.update(root_update)
 
         iteration = state["iteration"] + 1
         question_lower = state["question"].lower()
@@ -73,53 +83,59 @@ class AgentNodes:
 
         # 1) A calculation request goes to the calculator tool once, then to
         #    the generator so the loop terminates instead of thrashing.
+        def _finish(**decision_updates: Any) -> dict[str, Any]:
+            """Merge the root-span bookkeeping into every planner return."""
+
+            return {**updates, **decision_updates}
+
         if _ARITHMETIC.match(state["question"].strip()) or "calculate" in question_lower:
             if "calculator" not in tools_used:
-                return {
-                    "iteration": iteration,
-                    "decision": "tool",
-                    "decision_rationale": "question requests arithmetic; routing to calculator tool",
-                }
-            return {
-                "iteration": iteration,
-                "decision": "generate",
-                "decision_rationale": "calculator result available; generating final answer",
-            }
+                return _finish(
+                    iteration=iteration,
+                    decision="tool",
+                    decision_rationale="question requests arithmetic; routing to calculator tool",
+                )
+            return _finish(
+                iteration=iteration,
+                decision="generate",
+                decision_rationale="calculator result available; generating final answer",
+            )
 
         # 2) Explicit lookup phrasing goes straight to the document tool once.
         if any(kw in question_lower for kw in ("look up", "lookup", "find the doc")):
             if "document_lookup" not in tools_used:
-                return {
-                    "iteration": iteration,
-                    "decision": "tool",
-                    "decision_rationale": "explicit document lookup request; using document_lookup tool",
-                }
+                return _finish(
+                    iteration=iteration,
+                    decision="tool",
+                    decision_rationale="explicit document lookup request; using document_lookup tool",
+                )
 
         # 3) Default path: retrieve once if we have no context yet.
         if not state["retrieved_contexts"]:
-            return {
-                "iteration": iteration,
-                "decision": "retrieve",
-                "decision_rationale": "no context gathered yet; retrieving top documents",
-            }
+            return _finish(
+                iteration=iteration,
+                decision="retrieve",
+                decision_rationale="no context gathered yet; retrieving top documents",
+            )
 
         # 4) Have context — generate. If we already generated and iterations
         #    remain but nothing new was learned, stop instead of thrashing.
         if state["answer"] is not None or state["iteration"] >= state["max_iterations"]:
-            return {"iteration": iteration, "decision": "done",
-                    "decision_rationale": "answer already produced or budget exhausted"}
+            return _finish(iteration=iteration, decision="done",
+                           decision_rationale="answer already produced or budget exhausted")
 
-        return {
-            "iteration": iteration,
-            "decision": "generate",
-            "decision_rationale": f"context available after {state['iteration']} step(s); generating answer",
-        }
+        return _finish(
+            iteration=iteration,
+            decision="generate",
+            decision_rationale=f"context available after {state['iteration']} step(s); generating answer",
+        )
 
     def retrieve_node(self, state: AgentState) -> dict[str, Any]:
         run_id = self.callback_handler.new_run_id()
+        parent_run_id = UUID(state["root_run_id"]) if state.get("root_run_id") else None
         self.callback_handler.on_retriever_start(
             {"name": "AgentRetriever"}, state["question"], run_id=run_id,
-            parent_run_id=self._root_run_id,
+            parent_run_id=parent_run_id,
         )
         documents = self.retriever.invoke(state["question"])
         self.callback_handler.on_retriever_end(documents, run_id=run_id)
@@ -130,6 +146,7 @@ class AgentNodes:
         }
 
     def tool_executor(self, state: AgentState) -> dict[str, Any]:
+        parent_run_id = UUID(state["root_run_id"]) if state.get("root_run_id") else None
         question_lower = state["question"].lower()
         if _ARITHMETIC.match(state["question"].strip()) or "calculate" in question_lower:
             tool_name = "calculator"
@@ -142,7 +159,7 @@ class AgentNodes:
         run_id = self.callback_handler.new_run_id()
         self.callback_handler.on_tool_start(
             {"name": tool.name}, tool_input, run_id=run_id,
-            parent_run_id=self._root_run_id,
+            parent_run_id=parent_run_id,
         )
         try:
             result = tool.func(tool_input)
@@ -161,6 +178,7 @@ class AgentNodes:
         }
 
     def generator(self, state: AgentState) -> dict[str, Any]:
+        root_run_id = UUID(state["root_run_id"]) if state.get("root_run_id") else None
         contexts = list(state["retrieved_contexts"])
         for call in state["tool_calls"]:
             if call["name"] == "document_lookup":
@@ -173,8 +191,6 @@ class AgentNodes:
         ]
         if not contexts and calculator_outputs:
             answer = f"The result is {calculator_outputs[-1]}."
-            root_run_id = self._root_run_id
-            self._root_run_id = None
             self.callback_handler.on_chain_end(
                 {"answer": answer, "iterations": state["iteration"],
                  "tool_calls": [c["name"] for c in state["tool_calls"]]},
@@ -194,7 +210,7 @@ class AgentNodes:
         self.callback_handler.on_llm_start(
             {"name": type(self.chat_model).__name__, "provider": self.chat_model.provider_name},
             [prompt], run_id=run_id,
-            parent_run_id=self._root_run_id,
+            parent_run_id=root_run_id,
         )
         try:
             response = self.chat_model.invoke(prompt)
@@ -208,10 +224,6 @@ class AgentNodes:
             item.get("text", "") if isinstance(item, dict) else str(item) for item in content
         ).strip()
 
-        # Close the root chain span with the final answer — the trace is now
-        # complete and the async eval worker can score it.
-        root_run_id = self._root_run_id
-        self._root_run_id = None
         self.callback_handler.on_chain_end(
             {"answer": answer, "iterations": state["iteration"],
              "tool_calls": [c["name"] for c in state["tool_calls"]]},

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { apiRequest, AgentMetrics } from "../api/client";
+import { apiRequest, AgentMetrics } from "../../api/client";
 
 export function AgentLoopChart() {
   const [metrics, setMetrics] = useState<AgentMetrics>();
@@ -9,14 +9,24 @@ export function AgentLoopChart() {
   useEffect(() => {
     apiRequest<AgentMetrics>("/api/v1/metrics/agent")
       .then(setMetrics)
-      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load agent metrics"));
+      .catch((e) =>
+        setError(
+          e instanceof Error ? e.message : "Failed to load agent metrics",
+        ),
+      );
   }, []);
 
   if (error)
-    return <p className="rounded-md bg-rose-400/10 p-3 text-sm text-rose-200">{error}</p>;
+    return (
+      <p className="rounded-md bg-rose-400/10 p-3 text-sm text-rose-200">
+        {error}
+      </p>
+    );
   if (!metrics) return null;
 
-  const efficient = metrics.runs.filter((r) => r.classification === "efficient").length;
+  const efficient = metrics.runs.filter(
+    (r) => r.classification === "efficient",
+  ).length;
   const thrashing = metrics.runs.length - efficient;
   const total = metrics.runs.length || 1;
 
@@ -28,12 +38,15 @@ export function AgentLoopChart() {
             key={metric.name}
             className="rounded-lg border border-slate-800 bg-slate-900/70 p-4"
           >
-            <div className="text-xs uppercase tracking-wide text-slate-500">{metric.name}</div>
+            <div className="text-xs uppercase tracking-wide text-slate-500">
+              {metric.name}
+            </div>
             <div className="mt-2 text-2xl font-semibold tabular-nums text-white">
               {metric.avg_score != null ? metric.avg_score.toFixed(2) : "—"}
             </div>
             <div className="mt-2 text-xs text-slate-500">
-              {metric.cases_scored} agent run{metric.cases_scored === 1 ? "" : "s"} scored
+              {metric.cases_scored} agent run
+              {metric.cases_scored === 1 ? "" : "s"} scored
             </div>
           </div>
         ))}
@@ -52,8 +65,14 @@ export function AgentLoopChart() {
               </span>
             </div>
             <div className="flex h-3 w-full overflow-hidden rounded bg-slate-950/70">
-              <div className="h-3 bg-emerald-400" style={{ width: `${(efficient / total) * 100}%` }} />
-              <div className="h-3 bg-rose-400" style={{ width: `${(thrashing / total) * 100}%` }} />
+              <div
+                className="h-3 bg-emerald-400"
+                style={{ width: `${(efficient / total) * 100}%` }}
+              />
+              <div
+                className="h-3 bg-rose-400"
+                style={{ width: `${(thrashing / total) * 100}%` }}
+              />
             </div>
           </div>
 
@@ -75,7 +94,9 @@ export function AgentLoopChart() {
                       {run.trace_id.slice(0, 12)}…
                     </td>
                     <td className="tabular-nums px-5 py-2">
-                      {run.tool_correctness != null ? run.tool_correctness.toFixed(2) : "—"}
+                      {run.tool_correctness != null
+                        ? run.tool_correctness.toFixed(2)
+                        : "—"}
                     </td>
                     <td className="px-5 py-2">
                       {run.task_success ? (

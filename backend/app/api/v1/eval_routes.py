@@ -9,14 +9,20 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends
 
+from app.core.auth import require_api_key
 from app.core.config import get_settings
 from app.db.session import session_scope
 from app.evaluation.runners.ci_runner import run_golden_dataset
 from app.evaluation.runners.realtime_worker import score_trace, should_sample
 
-router = APIRouter(prefix="/eval", tags=["evaluations"])
+router = APIRouter(
+    prefix="/eval",
+    tags=["evaluations"],
+    # M4: /run fans out to paid LLM calls — never expose it unauthenticated.
+    dependencies=[Depends(require_api_key)],
+)
 
 
 def _latest_unscored_trace_ids() -> list[str]:

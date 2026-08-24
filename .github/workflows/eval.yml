@@ -12,12 +12,17 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    env:
+      # M1 fix: without this the whole test module skips (skipif on missing
+      # key) and CI reports green while gating nothing. When the secret is
+      # absent the suite still skips gracefully — safe for untrusted PRs.
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install backend and evaluation dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+      - name: Install backend, OpenAI, and evaluation dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev,openai]"
       - name: Run golden RAG DeepEval suite
         run: deepeval test run tests/eval/test_rag_metrics.py

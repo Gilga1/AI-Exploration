@@ -35,13 +35,15 @@ _last_alerted: dict[str, datetime] = {}
 
 
 def _webhook_post(payload: dict[str, Any]) -> bool:
-    """Deliver one alert to the configured webhook. Never raises."""
+    """Deliver one alert to the configured webhook. Never raises, never blocks
+    the caller for long (M2 fix): the request is bounded to 5s and runs with a
+    short-lived client so a hanging webhook can't stall /metrics responses."""
 
     url = get_settings().alert_webhook_url
     if not url:
         return False
     try:
-        response = httpx.post(url, json=payload, timeout=10.0)
+        response = httpx.post(url, json=payload, timeout=5.0)
         return response.status_code < 300
     except Exception:
         logger.warning("alert webhook delivery failed", exc_info=True)

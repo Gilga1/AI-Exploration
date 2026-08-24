@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { apiRequest, RagMetrics } from "../api/client";
+import { apiRequest, RagMetrics } from "../../api/client";
 
 const scoreColor = (score: number | null) => {
   if (score == null) return "bg-slate-700";
@@ -17,12 +17,19 @@ export function MetricsOverview() {
   useEffect(() => {
     apiRequest<RagMetrics>("/api/v1/metrics/rag")
       .then(setMetrics)
-      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load metrics"));
+      .catch((e) =>
+        setError(e instanceof Error ? e.message : "Failed to load metrics"),
+      );
   }, []);
 
   if (error)
-    return <p className="rounded-md bg-rose-400/10 p-3 text-sm text-rose-200">{error}</p>;
-  if (!metrics) return <p className="text-sm text-slate-500">Loading metrics…</p>;
+    return (
+      <p className="rounded-md bg-rose-400/10 p-3 text-sm text-rose-200">
+        {error}
+      </p>
+    );
+  if (!metrics)
+    return <p className="text-sm text-slate-500">Loading metrics…</p>;
 
   return (
     <div className="space-y-4">
@@ -32,7 +39,9 @@ export function MetricsOverview() {
             key={metric.name}
             className="rounded-lg border border-slate-800 bg-slate-900/70 p-4"
           >
-            <div className="text-xs uppercase tracking-wide text-slate-500">{metric.name}</div>
+            <div className="text-xs uppercase tracking-wide text-slate-500">
+              {metric.name}
+            </div>
             <div className="mt-2 text-2xl font-semibold tabular-nums text-white">
               {metric.avg_score != null ? metric.avg_score.toFixed(2) : "—"}
             </div>
@@ -43,7 +52,8 @@ export function MetricsOverview() {
               />
             </div>
             <div className="mt-2 text-xs text-slate-500">
-              {metric.cases_scored} trace{metric.cases_scored === 1 ? "" : "s"} scored
+              {metric.cases_scored} trace{metric.cases_scored === 1 ? "" : "s"}{" "}
+              scored
             </div>
           </div>
         ))}
@@ -97,7 +107,9 @@ export function RagMetricsPanel() {
                 </Link>
               </td>
               <td className="px-5 py-2">{row.metric}</td>
-              <td className="tabular-nums px-5 py-2">{row.score != null ? row.score.toFixed(2) : "—"}</td>
+              <td className="tabular-nums px-5 py-2">
+                {row.score != null ? row.score.toFixed(2) : "—"}
+              </td>
               <td className="px-5 py-2">
                 <span
                   className={`rounded-full px-2 py-0.5 text-xs ${

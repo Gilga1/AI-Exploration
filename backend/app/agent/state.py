@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal
+from uuid import UUID
 
 from typing_extensions import TypedDict
 
@@ -30,3 +31,8 @@ class AgentState(TypedDict):
     tool_calls: Annotated[list[dict[str, Any]], merge_lists]
     intermediate_notes: Annotated[list[str], merge_lists]
     answer: str | None
+    # Per-invocation trace bookkeeping (fixes H1/H2): the root chain run id and
+    # the OTel trace id captured when the root span opens. Stored in state so
+    # concurrent invocations never share or overwrite each other's identity.
+    root_run_id: str | None
+    trace_id: str | None

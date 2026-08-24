@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     rag_embedding_dimension: int = 256
     rag_retrieval_k: int = 3
     eval_sampling_rate: float = 1.0  # Head-based rate for trace scoring; <1.0 bounds judge cost.
+    metrics_score_backstop: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("METRICS_SCORE_BACKSTOP", "APP_METRICS_SCORE_BACKSTOP"),
+    )
     alert_webhook_url: str | None = Field(
         default=None,
         validation_alias=AliasChoices("ALERT_WEBHOOK_URL", "APP_ALERT_WEBHOOK_URL"),

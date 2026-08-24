@@ -1,8 +1,9 @@
-"""DeepEval regression gate for the Phase 1 golden dataset.
+"""Regression gate for the golden dataset.
 
-The deterministic RAG chain runs with no credentials. DeepEval's four
-LLM-as-a-judge metrics skip until a judge API key is supplied, which makes
-local and untrusted-PR CI safe and offline by default.
+The harness is fully LLM-driven: generation and judging both require
+``OPENAI_API_KEY``. When the key is absent the module skips — safe for
+untrusted/offline CI; when present, every golden case runs against the real
+model and DeepEval judges assert the RAG metric thresholds.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from app.rag.chains import build_phase_one_chain
 
 pytestmark = pytest.mark.skipif(
     not get_settings().has_llm_judge_credentials,
-    reason="Set OPENAI_API_KEY to run DeepEval LLM-judge metrics.",
+    reason="Fully LLM-driven harness: set OPENAI_API_KEY to run this suite.",
 )
 
 
@@ -35,3 +36,14 @@ def test_golden_rag_metrics(example: GoldenExample, rag_chain) -> None:
     result = rag_chain.invoke(example.query)
     test_case = make_deepeval_test_case(example, result)
     assert_test(test_case, metrics=[metric for _, metric in build_rag_metrics()])
+
+
+def test_missing_key_fails_fast() -> None:
+    """get_chat_model must raise a clear config error when no key is set."""
+
+    from app.core.config import Settings
+    from app.rag.chains import get_chat_model
+
+    keyless = Settings(openai_api_key=None, _env_file=None)
+    with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+        get_chat_model(keyless)

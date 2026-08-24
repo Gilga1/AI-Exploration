@@ -70,6 +70,14 @@ class LangChainOTelCallbackHandler(BaseCallbackHandler):
 
         return uuid4()
 
+    def last_trace_id(self, run_key: str) -> str | None:
+        """Trace id of an open span (H1/H2 fix): lets the invocation capture
+        its own trace identity instead of guessing "newest row" afterwards."""
+
+        with self._lock:
+            active = self._active.get(run_key)
+        return active.trace_id if active else None
+
     def on_chain_start(
         self,
         serialized: dict[str, Any] | None,
