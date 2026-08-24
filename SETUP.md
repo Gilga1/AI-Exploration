@@ -2,6 +2,8 @@
 
 Complete setup instructions for running the AI Agent Harness locally: real LLM endpoints, multi-agent orchestration, workflow templates, HITL approvals, memory, and observability.
 
+> **Architecture reference:** [ARCHITECTURE.md](ARCHITECTURE.md)
+
 ---
 
 ## Prerequisites

@@ -2,6 +2,8 @@
 
 A **generic, plugin-based agent orchestration harness**. The core engine only knows interfaces — tools, skills, agents, connectors, workflows, and context packs self-register at bootstrap via decorators or YAML manifests. Domain logic lives in config, not in core Python.
 
+> **Architecture deep-dive:** [ARCHITECTURE.md](ARCHITECTURE.md) — layered design, data flows, diagrams, memory, telemetry, and extension points.
+
 ## What it does
 
 Given any business context, the harness can:
