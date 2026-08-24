@@ -65,6 +65,11 @@ class LangChainOTelCallbackHandler(BaseCallbackHandler):
         self._active: dict[str, _ActiveSpan] = {}
         self._lock = RLock()
 
+    def new_run_id(self) -> UUID:
+        """Mint a fresh run id for callers driving the handler manually."""
+
+        return uuid4()
+
     def on_chain_start(
         self,
         serialized: dict[str, Any] | None,

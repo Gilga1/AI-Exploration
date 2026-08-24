@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Braces, Database, Sparkles, Wrench } from "lucide-react";
 
 import { apiRequest, TraceDetail as TraceDetailData } from "../api/client";
 
@@ -9,6 +9,13 @@ const kindColors: Record<string, string> = {
   retriever: "bg-violet-400",
   llm: "bg-amber-400",
   tool: "bg-emerald-400",
+};
+
+const kindIcons: Record<string, typeof Sparkles> = {
+  chain: Braces,
+  retriever: Database,
+  llm: Sparkles,
+  tool: Wrench,
 };
 
 function SpanRow({
@@ -30,7 +37,15 @@ function SpanRow({
   return (
     <div className="space-y-1 px-5 py-3">
       <div className="flex items-baseline justify-between gap-3 text-sm">
-        <span className="font-medium text-slate-200">{span.name}</span>
+        <span className="flex items-center gap-2 font-medium text-slate-200">
+          {(() => {
+            const Icon = kindIcons[span.kind];
+            return Icon ? (
+              <Icon className={`h-3.5 w-3.5 ${kindColors[span.kind] ?? "text-slate-500"}`} />
+            ) : null;
+          })()}
+          {span.name}
+        </span>
         <span className="shrink-0 tabular-nums text-xs text-slate-400">
           {span.duration_ms?.toFixed(2)} ms
         </span>
