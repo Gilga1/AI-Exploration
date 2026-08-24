@@ -21,27 +21,30 @@ def should_use_multi_agent(
     if mode == "multi":
         return True
 
-    if _cross_domain_request(message):
-        return True
-
-    if candidates and len(candidates) >= 2:
-        top = candidates[0]
-        second = candidates[1]
-        if top.kind == "agent" and second.kind == "agent" and second.score >= 0.15:
-            if top.name != second.name and _cross_domain_request(message):
-                return True
-
-    return False
+    return _ambiguous_multi_capability_match(settings, candidates)
 
 
-def _cross_domain_request(message: str) -> bool:
-    """Multi-agent when the request spans distinct capability domains."""
-    lowered = message.lower()
-    research_domain = any(
-        keyword in lowered for keyword in ("competitor", "research", "positioning", "brief")
-    )
-    analytics_domain = any(
-        keyword in lowered
-        for keyword in ("advisor", "sales", "analyze", "analysis", "aum", "product", "chart")
-    )
-    return research_domain and analytics_domain
+def _ambiguous_multi_capability_match(
+    settings: HarnessSettings,
+    candidates: list[RetrievalCandidate] | None,
+) -> bool:
+    """Use multi-agent planning when routing is ambiguous across capabilities."""
+    if not candidates or len(candidates) < 2:
+        return False
+
+    synthesizer = settings.orchestration_synthesizer_agent
+    viable = [
+        candidate
+        for candidate in candidates
+        if candidate.name != synthesizer and candidate.score >= settings.routing_min_score
+    ]
+    if len(viable) < 2:
+        return False
+
+    top = viable[0]
+    second = viable[1]
+    if top.name == second.name:
+        return False
+
+    margin = top.score - second.score
+    return margin < settings.routing_clear_margin

@@ -417,18 +417,12 @@ class Orchestrator:
 def _format_agent_message(agent_name: str, output: dict[str, Any] | None) -> str:
     if not output:
         return f"Agent {agent_name} completed."
-    if "positioning_summary" in output:
-        return (
-            f"Completed {agent_name} for {output.get('competitor', 'competitor')}: "
-            f"{output['positioning_summary']}"
-        )
-    if "analysis_summary" in output:
-        return (
-            f"Completed {agent_name} for {output.get('advisor', 'advisor')}: "
-            f"{output['analysis_summary']}"
-        )
-    if "response" in output:
+    if output.get("response"):
         return str(output["response"])
     if "completed_tasks" in output:
         return str(output.get("response") or output)
+    for key, value in output.items():
+        if isinstance(value, str) and value.strip():
+            if key in ("summary", "message") or key.endswith("_summary"):
+                return f"Completed {agent_name}: {value}"
     return f"Agent {agent_name} completed with results."

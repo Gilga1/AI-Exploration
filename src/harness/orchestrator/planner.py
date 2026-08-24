@@ -35,7 +35,6 @@ class Planner:
 
     def create_plan(self, request: IncomingRequest) -> ExecutionPlan:
         mode: PlannerMode = self._settings.orchestration_planner  # type: ignore[assignment]
-        last_template_name: str | None = None
 
         if self._workflows is not None and mode in ("auto", "template", "hybrid"):
             plan = self._workflows.try_build_plan(request.message, mode=mode)
@@ -49,14 +48,26 @@ class Planner:
             return _empty_template_plan(request.message)
 
         if self._settings.force_stub_models:
-            return _stub_plan(request.message, self._registry, self._settings, mode=mode)
+            return _index_plan(
+                request.message,
+                self._index,
+                self._registry,
+                self._settings,
+                mode=mode,
+            )
 
         model_cfg = next(
             (m for m in self._config.models.models if m.name == "fast_router"),
             None,
         )
         if model_cfg is None or model_cfg.provider == "stub":
-            return _heuristic_plan(request.message, self._registry, self._settings, mode=mode)
+            return _heuristic_plan(
+                request.message,
+                self._index,
+                self._registry,
+                self._settings,
+                mode=mode,
+            )
 
         return _llm_plan(
             request.message,
@@ -65,6 +76,7 @@ class Planner:
             settings=self._settings,
             model_name="fast_router",
             mode=mode,
+            capability_index=self._index,
         )
 
     def _annotate_rationale(self, rationale: str, *, mode: PlannerMode) -> str:
@@ -92,12 +104,14 @@ def _llm_plan(
     settings: HarnessSettings,
     model_name: str,
     mode: PlannerMode,
+    capability_index: CapabilityIndex,
 ) -> ExecutionPlan:
     model_cfg = next((m for m in config.models.models if m.name == model_name), None)
     assert model_cfg is not None
     model = build_chat_model(model_cfg)
 
-    catalog = _build_catalog(registry, exclude={"synthesizer"})
+    synthesizer = settings.orchestration_synthesizer_agent
+    catalog = _build_catalog(registry, exclude={synthesizer})
     prompt = (
         "Create an execution plan for the user request using ONLY registered agents and skills.\n"
         "Do NOT include a synthesizer step — it runs automatically after all tasks.\n"
@@ -128,89 +142,75 @@ def _llm_plan(
     )
     content = response.content if isinstance(response.content, str) else str(response.content)
     parsed = _parse_json(content)
-    plan = _plan_from_payload(parsed, registry, settings, message)
+    plan = _plan_from_payload(parsed, registry, settings, message, capability_index)
     plan.rationale = f"{plan.rationale} (planner={mode})"
     return plan
 
 
 def _heuristic_plan(
     message: str,
+    index: CapabilityIndex,
     registry: ToolRegistry,
     settings: HarnessSettings,
     *,
     mode: PlannerMode,
 ) -> ExecutionPlan:
-    plan = _stub_plan(message, registry, settings, mode=mode)
-    return plan
+    return _index_plan(message, index, registry, settings, mode=mode)
 
 
-def _stub_plan(
+def _index_plan(
     message: str,
+    index: CapabilityIndex,
     registry: ToolRegistry,
     settings: HarnessSettings,
     *,
     mode: PlannerMode = "auto",
 ) -> ExecutionPlan:
-    lowered = message.lower()
+    synthesizer = settings.orchestration_synthesizer_agent
+    candidates = index.search(message, k=settings.routing_top_k)
+    viable = [
+        candidate
+        for candidate in candidates
+        if candidate.name != synthesizer and candidate.score >= settings.routing_min_score
+    ]
+
     tasks: list[PlannedTask] = []
-    if any(word in lowered for word in ("competitor", "research")):
-        competitor = _extract_name(message, r"competitor\s+([A-Za-z0-9][A-Za-z0-9 ._-]*)")
-        tasks.append(
-            PlannedTask(
-                task_id="t1",
-                title=f"Research {competitor or 'competitor'}",
-                objective=f"Research competitor {competitor or 'the named competitor'}",
-                assignee_kind="agent",
-                assignee_name="competitor_research",
-                fallback_hint=f"public information about {competitor or 'the competitor'}",
-            )
-        )
-    if any(word in lowered for word in ("advisor", "sales", "analyze", "analysis", "product")):
-        advisor = _extract_name(message, r"advisor\s+([A-Za-z][A-Za-z .'-]*)")
+    seen: set[str] = set()
+    for candidate in viable:
+        if candidate.name in seen:
+            continue
+        seen.add(candidate.name)
         tasks.append(
             PlannedTask(
                 task_id=f"t{len(tasks) + 1}",
-                title=f"Analyze {advisor or 'advisor'} sales",
+                title=(candidate.description[:80] if candidate.description else candidate.name),
                 objective=message,
-                assignee_kind="agent",
-                assignee_name="agentic_analyzer",
-                fallback_hint=f"sales figures for {advisor or 'this advisor'}",
+                assignee_kind=candidate.kind,
+                assignee_name=candidate.name,
+                fallback_hint=f"results from {candidate.name}",
             )
         )
-    if "pdf" in lowered and "markdown_to_pdf" in registry.skills:
-        tasks.append(
-            PlannedTask(
-                task_id=f"t{len(tasks) + 1}",
-                title="Render PDF",
-                objective="",
-                assignee_kind="skill",
-                assignee_name="markdown_to_pdf",
-                depends_on=[tasks[-1].task_id] if tasks else [],
-                skill_input_template={"markdown": "# Brief\n\nGenerated from prior tasks.", "title": "Brief"},
-                fallback_hint="exporting the final brief as a PDF",
-            )
-        )
+        if len(tasks) >= settings.orchestration_max_tasks:
+            break
 
     if not tasks:
-        candidates = registry.list_capabilities()
-        agent = next((c for c in candidates if c.kind == "agent" and c.name != "synthesizer"), None)
-        if agent:
-            tasks.append(
-                PlannedTask(
-                    task_id="t1",
-                    title=agent.description[:80],
-                    objective=message,
-                    assignee_kind="agent",
-                    assignee_name=agent.name,
+        for capability in registry.list_capabilities():
+            if capability.kind == "agent" and capability.name != synthesizer:
+                tasks.append(
+                    PlannedTask(
+                        task_id="t1",
+                        title=capability.description[:80],
+                        objective=message,
+                        assignee_kind="agent",
+                        assignee_name=capability.name,
+                    )
                 )
-            )
+                break
 
-    tasks = tasks[: settings.orchestration_max_tasks]
-    plan_id = uuid.uuid4().hex
     return ExecutionPlan(
-        plan_id=plan_id,
-        tasks=tasks,
-        rationale=f"Stub/heuristic plan (planner={mode}).",
+        plan_id=uuid.uuid4().hex,
+        tasks=tasks[: settings.orchestration_max_tasks],
+        rationale=f"Capability-index plan (planner={mode}).",
         status="awaiting_approval",
     )
 
@@ -220,7 +220,9 @@ def _plan_from_payload(
     registry: ToolRegistry,
     settings: HarnessSettings,
     message: str,
+    capability_index: CapabilityIndex,
 ) -> ExecutionPlan:
+    synthesizer = settings.orchestration_synthesizer_agent
     raw_tasks = payload.get("tasks") or []
     tasks: list[PlannedTask] = []
     for index, raw in enumerate(raw_tasks[: settings.orchestration_max_tasks]):
@@ -230,7 +232,7 @@ def _plan_from_payload(
             continue
         if kind == "skill" and name not in registry.skills:
             continue
-        if name == "synthesizer":
+        if name == synthesizer:
             continue
         tasks.append(
             PlannedTask(
@@ -247,7 +249,7 @@ def _plan_from_payload(
         )
 
     if not tasks:
-        return _stub_plan(message, registry, settings)
+        return _index_plan(message, capability_index, registry, settings)
 
     return ExecutionPlan(
         plan_id=uuid.uuid4().hex,
@@ -266,11 +268,6 @@ def _build_catalog(registry: ToolRegistry, *, exclude: set[str]) -> str:
             continue
         lines.append(f"- {cap.name} ({cap.kind}): {cap.description}")
     return "\n".join(lines)
-
-
-def _extract_name(message: str, pattern: str) -> str:
-    match = re.search(pattern, message, re.I)
-    return match.group(1).strip().rstrip(".") if match else ""
 
 
 def _parse_json(content: str) -> dict[str, Any]:
