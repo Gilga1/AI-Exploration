@@ -31,18 +31,24 @@ User → Planner → HITL plan approval → Execute tasks (agents/skills) → Sy
 | 1 | [phase-1-multi-agent-delegation.md](./phase-1-multi-agent-delegation.md) | **Implemented** |
 | 2 | [phase-2-dag-parallelism.md](./phase-2-dag-parallelism.md) | **Implemented** |
 | 3 | [phase-3-observability.md](./phase-3-observability.md) | **Implemented** |
-| 4 | [phase-4-workflow-templates.md](./phase-4-workflow-templates.md) | Planned |
+| 4 | [phase-4-workflow-templates.md](./phase-4-workflow-templates.md) | **Implemented** |
 | 5 | [phase-5-dynamic-sub-agents.md](./phase-5-dynamic-sub-agents.md) | Planned |
 
-## Related code (Phase 1)
+## Related code
 
 ```
 src/harness/orchestrator/
-  plan_models.py      # ExecutionPlan, PlannedTask, TaskResult
-  complexity.py       # simple vs multi gate
-  planner.py          # LLM + stub planner
-  task_executor.py    # sequential agent/skill dispatch
-  orchestrator.py     # extended graph + plan resume
-harness/agents/
-  synthesizer.yaml    # dedicated merge agent
+  plan_models.py        # ExecutionPlan, PlannedTask, TaskResult
+  complexity.py         # simple vs multi gate
+  planner.py            # LLM + workflow + stub planner
+  workflow_*.py         # Template loader, matcher, slot filling
+  task_executor.py      # Agent/skill dispatch
+  dag_executor.py       # Parallel batches, depends_on
+  plan_store.py         # Plan snapshots (SQLite)
+  waterfall.py          # Event hierarchy builder
+  plan_runner.py        # Plan lifecycle + synthesizer
+  orchestrator.py       # Extended graph + plan resume
+harness/
+  agents/synthesizer.yaml
+  workflows/*.yaml      # Declarative plan templates
 ```

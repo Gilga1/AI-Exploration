@@ -1,10 +1,66 @@
 # AI Agent Harness
 
-Plugin-based agent orchestration harness where the core engine only knows interfaces. Tools, skills, agents, and connectors self-register at import time via decorators or YAML manifests.
+A **generic, plugin-based agent orchestration harness**. The core engine only knows interfaces — tools, skills, agents, connectors, workflows, and context packs self-register at bootstrap via decorators or YAML manifests. Domain logic lives in config, not in core Python.
+
+## What it does
+
+Given any business context, the harness can:
+
+1. **Route** a user request to the right skill or agent (tiered capability index + optional LLM disambiguation)
+2. **Plan** multi-step work when the request spans capabilities (LLM planner, workflow templates, or heuristics)
+3. **Pause for HITL** when plans or tools require human approval
+4. **Execute** tasks in parallel DAG batches with per-task budgets and failure policies
+5. **Synthesize** results into a single response via a dedicated merge agent
+6. **Remember** working + episodic memory across runs
+7. **Trace** everything — OTel spans, event ledger, plan snapshots, waterfall views
+
+## Request flow
+
+### Single-agent (simple requests)
+
+```
+User message
+  → Tiered router (capability index)
+  → Dispatch skill or agent
+  → Response (+ artifacts, events)
+```
+
+### Multi-agent (complex / cross-domain requests)
+
+```
+User message
+  → Complexity gate (orchestration_mode: auto | single | multi)
+  → Planner (workflow template | LLM | heuristic fallback)
+  → Plan HITL approval (__plan__)
+  → DAG executor (parallel batches, depends_on, failure policy)
+  → Synthesizer agent (always last)
+  → Response (+ plan, task_results, events)
+```
+
+```mermaid
+flowchart TD
+  A[User request] --> B{Orchestration mode}
+  B -->|single| C[Tiered router]
+  B -->|multi / auto| D{Complex enough?}
+  D -->|no| C
+  D -->|yes| E[Planner]
+  E --> F{Workflow match?}
+  F -->|auto/template/hybrid| G[YAML workflow template]
+  F -->|no match| H[LLM or heuristic plan]
+  G --> I[ExecutionPlan]
+  H --> I
+  I --> J{Plan HITL}
+  J -->|reject| K[Failure]
+  J -->|approve| L[DAG executor]
+  L --> M[Synthesizer agent]
+  M --> N[Final response]
+  C --> O[Skill or agent]
+  O --> N
+```
 
 ## Quick start
 
-See **[SETUP.md](SETUP.md)** for full Windows/macOS/Linux setup, API keys, Firecrawl, HITL, and extension guides.
+See **[SETUP.md](SETUP.md)** for full Windows/macOS/Linux setup, API keys, multi-agent orchestration, HITL, workflows, and extension guides.
 
 ```bash
 bash scripts/setup_env.sh          # macOS/Linux
@@ -23,10 +79,20 @@ harness-serve
 |----------|-------------|
 | `GET /health` | Liveness |
 | `GET /admin/capabilities` | Registry + config plane introspection |
-| `GET /admin/events` | Event ledger (waterfall UI feed) |
-| `POST /v1/handle` | Orchestrator — route and dispatch skills or agents |
+| `GET /admin/workflows` | Loaded workflow templates + planner settings |
+| `GET /admin/plans` | Recent execution plans (snapshots) |
+| `GET /admin/plans/{plan_id}` | Plan detail + task results |
+| `GET /admin/plans/{plan_id}/waterfall` | Event hierarchy for a plan run |
+| `GET /admin/metrics` | Plan metrics + registry counts |
+| `GET /admin/events` | Event ledger (optionally filter by `trace_id`) |
+| `GET /admin/approvals` | Pending HITL approvals |
+| `POST /v1/handle` | Route, plan, or dispatch |
+| `POST /v1/resume` | Resume after HITL (plan or tool approval) |
+| `GET /v1/runs/{trace_id}/events` | SSE stream of run events |
 
-Example:
+### Examples
+
+**Single skill:**
 
 ```bash
 curl -X POST http://localhost:8000/v1/handle \
@@ -34,36 +100,75 @@ curl -X POST http://localhost:8000/v1/handle \
   -d '{"message":"Turn my meeting notes into a PDF","skill_input":{"markdown":"# Notes\nHello","title":"Sync"}}'
 ```
 
+**Multi-agent (plan → HITL → execute):**
+
+```bash
+curl -X POST http://localhost:8000/v1/handle \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"Research competitor Acme Corp and analyze advisor Jane Doe sales.","orchestration":{"mode":"multi"}}'
+# → status: awaiting_plan_approval, plan with tasks
+
+curl -X POST http://localhost:8000/v1/resume \
+  -H 'Content-Type: application/json' \
+  -d '{"task_id":"<plan_id>","thread_id":"<thread_id>","decisions":[{"type":"approve"}]}'
+```
+
 ## Layout
 
 ```
-src/harness/           # Core library
-  agents/              # DeclarativeAgent (YAML → deepagents)
-  config/              # YAML config plane loader
-  memory/              # MemoryManager + artifacts
-  routing/             # Capability index + tiered router
-  orchestrator/        # LangGraph dispatch + sub-agent spawning
-  telemetry/           # OTel spans, event ledger, routing/tool/LLM events
-harness/               # Plugin + config drop-zones
-  tools/               # @register_tool
-  skills/              # @register_skill
-  agents/              # YAML agent manifests
-  connectors/          # connector.yaml per data source
-  context/             # business context packs
-  models/              # LLM endpoint registry
-  mcp/                 # MCP server registry
+src/harness/              # Core library (domain-agnostic)
+  agents/                 # DeclarativeAgent (YAML → deepagents)
+  analytics/              # Shared analytics helpers (used by tools)
+  config/                 # YAML config plane loader
+  memory/                 # MemoryManager + artifacts
+  routing/                # Capability index + tiered router
+  orchestrator/           # LangGraph dispatch, planner, DAG executor, workflows
+  telemetry/              # OTel spans, event ledger, waterfall
+harness/                  # Plugin + config drop-zones (your domain)
+  tools/                  # @register_tool
+  skills/                 # @register_skill
+  agents/                 # YAML agent manifests
+  workflows/              # YAML multi-agent plan templates (Phase 4)
+  connectors/             # connector.yaml per data source
+  context/                # Business context packs
+  models/                 # LLM endpoint registry
+  mcp/                    # MCP server registry
+spec/                     # Orchestration phase specs (1–5)
 harness.settings.yaml
 ```
 
-## Phases implemented
+## Orchestration phases
 
-- **Phase 1** — Core interfaces, registries, bootstrap discovery
-- **Phase 2** — YAML config plane, secret resolution, connector loading
-- **Phase 3** — MemoryManager (working/checkpointer), RunContext, request models
-- **Phase 4** — Tiered routing, LangGraph orchestrator, skill dispatch
-- **Phase 5** — OTel GenAI spans, event ledger, operational vs content-capture sampling
-- **Phase 7** — Sub-agent spawning via DeclarativeAgent + HandoffPacket/AgentResult
-- **Production integrations** — Anthropic/OpenAI LLM, Firecrawl search, fpdf2 PDF, HITL resume, MCP bootstrap, SQLite persistence, Langfuse OTel, data connectors
+| Phase | Feature | Status |
+|-------|---------|--------|
+| 1 | Multi-agent delegation — planner, plan HITL, task executor, synthesizer | **Implemented** |
+| 2 | Parallel DAG — `depends_on`, concurrency limits, failure policies | **Implemented** |
+| 3 | Observability — plan store, waterfall, metrics, alerts | **Implemented** |
+| 4 | Workflow templates — YAML plans, slot filling, planner modes | **Implemented** |
+| 5 | Dynamic sub-agent profiles — runtime YAML overrides | Planned |
+
+See **[spec/README.md](spec/README.md)** for detailed specs.
+
+## Core platform (earlier phases)
+
+- **Registries** — tools, skills, agents, connectors self-register at import
+- **Config plane** — YAML models, context packs, MCP servers, secrets
+- **Tiered routing** — capability index with optional LLM disambiguation
+- **Memory** — working (checkpointer) + episodic SQLite stores
+- **HITL** — tool interrupts + mandatory plan approval for multi-step runs
+- **Telemetry** — OTel GenAI spans, event ledger, Langfuse export
+- **MCP** — external tool servers discovered at bootstrap
+
+## Planner modes
+
+Configured via `orchestration_planner` in `harness.settings.yaml`:
+
+| Mode | Behavior |
+|------|----------|
+| `auto` | Try workflow template match first, then LLM/heuristic |
+| `template` | Workflow templates only |
+| `hybrid` | Template structure + LLM-refined objectives |
+| `llm` | Skip templates; LLM plans from capability catalog |
 
 ## Related project
 

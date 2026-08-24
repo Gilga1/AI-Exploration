@@ -1,6 +1,6 @@
 # Agent Harness — Setup Guide
 
-Complete setup instructions for running the AI Agent Harness locally with real LLM endpoints, Firecrawl search, and human-in-the-loop (HITL) approvals.
+Complete setup instructions for running the AI Agent Harness locally: real LLM endpoints, multi-agent orchestration, workflow templates, HITL approvals, memory, and observability.
 
 ---
 
@@ -138,7 +138,7 @@ pip install -r requirements-snowflake.txt  # Snowflake
 pytest -q
 ```
 
-Expected: **14 passed**.
+Expected: **43 passed**.
 
 ---
 
@@ -153,15 +153,71 @@ Server: **http://localhost:8000**
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/health` | GET | Liveness |
-| `/admin/capabilities` | GET | List tools, skills, agents |
+| `/admin/capabilities` | GET | List tools, skills, agents, connectors |
+| `/admin/workflows` | GET | Loaded workflow templates |
+| `/admin/plans` | GET | Recent execution plan snapshots |
+| `/admin/plans/{plan_id}` | GET | Plan detail + task results |
+| `/admin/plans/{plan_id}/waterfall` | GET | Event hierarchy for a plan run |
+| `/admin/metrics` | GET | Plan metrics + registry counts |
 | `/admin/events` | GET | Telemetry event ledger |
 | `/admin/approvals` | GET | Pending HITL approvals |
-| `/v1/handle` | POST | Route and dispatch request |
+| `/v1/handle` | POST | Route, plan, or dispatch request |
 | `/v1/resume` | POST | Resume after HITL approval |
+| `/v1/runs/{trace_id}/events` | GET | SSE stream of run events |
 
 ---
 
-## 6. Test with real endpoints
+## 6. How requests are handled
+
+### Single-agent path
+
+For simple requests (or when `orchestration.mode` is `single`):
+
+1. **Router** scores registered skills/agents via the capability index
+2. **Dispatch** runs the top match (skill `execute()` or agent `run()`)
+3. **Response** includes output, artifacts, and trace events
+
+### Multi-agent path
+
+For complex or cross-domain requests (or when `orchestration.mode` is `multi`):
+
+1. **Planner** builds an `ExecutionPlan`:
+   - `auto` — workflow template match first, then LLM/heuristic
+   - `template` — YAML workflows only
+   - `hybrid` — template structure + LLM-refined objectives
+   - `llm` — LLM plans from capability catalog
+2. **Plan HITL** — response status `awaiting_plan_approval`; human must approve before tasks run
+3. **DAG executor** runs tasks in parallel batches respecting `depends_on`, concurrency limits, and failure policy
+4. **Synthesizer** agent merges task outputs into a final response (always runs last, not in the plan)
+5. **Observability** — plan snapshot stored, per-task events with `duration_ms`, waterfall available via admin API
+
+### Orchestration settings (`harness.settings.yaml`)
+
+```yaml
+orchestration_mode: auto              # auto | single | multi
+orchestration_require_plan_approval: true
+orchestration_planner: auto           # auto | llm | template | hybrid
+orchestration_workflow_match_threshold: 0.6
+orchestration_max_tasks: 5
+orchestration_synthesizer_agent: synthesizer
+orchestration_parallel: true
+orchestration_max_parallel: 3
+orchestration_failure_policy: continue   # continue | fail_fast | retry_once
+orchestration_continue_on_failure: true
+```
+
+Override per request:
+
+```json
+{
+  "message": "Research competitor Acme and analyze advisor Jane Doe sales.",
+  "orchestration": { "mode": "multi" }
+}
+```
+
+---
+
+## 7. Test with real endpoints
 
 ### Skill: Markdown → PDF (real PDF rendering via fpdf2)
 
@@ -178,20 +234,40 @@ Invoke-RestMethod -Method POST -Uri http://localhost:8000/v1/handle `
   -ContentType "application/json" -Body $body
 ```
 
-### Agent: Competitor research (Firecrawl + LLM)
+### Multi-agent: competitive sales brief (workflow template)
+
+When the message matches tags in `harness/workflows/competitive_sales_brief.yaml`, the planner uses the template instead of LLM planning:
+
+```powershell
+$body = @{
+  message = "Research competitor Acme Corp and analyze advisor Jane Doe product sales."
+  orchestration = @{ mode = "multi" }
+} | ConvertTo-Json -Depth 5
+
+$result = Invoke-RestMethod -Method POST -Uri http://localhost:8000/v1/handle `
+  -ContentType "application/json" -Body $body
+# $result.status → awaiting_plan_approval
+# $result.plan.tasks → competitor_research + agentic_analyzer
+
+$resume = @{
+  task_id = $result.task_id
+  thread_id = $result.thread_id
+  decisions = @(@{ type = "approve" })
+} | ConvertTo-Json -Depth 5
+
+Invoke-RestMethod -Method POST -Uri http://localhost:8000/v1/resume `
+  -ContentType "application/json" -Body $resume
+```
+
+### Agent: Competitor research (single-agent, Firecrawl + LLM)
 
 Requires `HARNESS_SECRET_ANTHROPIC_API_KEY` and `HARNESS_SECRET_FIRECRAWL_API_KEY`.
-
-The default agent `competitor_research` uses `primary_reasoner` (Claude). Ensure `harness/agents/competitor_research.yaml` has:
-
-```yaml
-model_config_ref: primary_reasoner
-```
 
 ```powershell
 $body = @{
   message = "Research competitor Acme Corp and draft a positioning brief."
-} | ConvertTo-Json
+  orchestration = @{ mode = "single" }
+} | ConvertTo-Json -Depth 5
 
 Invoke-RestMethod -Method POST -Uri http://localhost:8000/v1/handle `
   -ContentType "application/json" -Body $body
@@ -215,9 +291,21 @@ Stub mode uses deterministic responses; Firecrawl falls back to placeholder sear
 
 ---
 
-## 7. Human-in-the-loop (HITL)
+## 8. Human-in-the-loop (HITL)
 
-Tools listed in an agent's `interrupt_tools` pause execution and require approval.
+There are two HITL gates:
+
+### Plan approval (multi-agent)
+
+Every multi-step plan requires approval before tasks execute. The approval `task_id` is the plan ID.
+
+1. Send a multi-agent request → `status: awaiting_plan_approval`
+2. Review `plan.tasks` in the response
+3. Resume with `decisions: [{ "type": "approve" }]` or `"reject"`
+
+### Tool approval (per-agent)
+
+Tools listed in an agent's `interrupt_tools` pause execution mid-run.
 
 Example in `harness/agents/competitor_research.yaml`:
 
@@ -226,17 +314,11 @@ interrupt_tools:
   - render_pdf_from_html
 ```
 
-### Flow
+Flow:
 
-1. Send a request that triggers the agent and causes an interrupt (e.g. agent tries to render a PDF).
-2. Response status: `awaiting_approval` with `task_id` and `interrupts`.
-3. List pending approvals:
-
-```powershell
-Invoke-RestMethod http://localhost:8000/admin/approvals
-```
-
-4. Resume with approval:
+1. Agent tries an interrupt tool → `status: awaiting_approval`
+2. List pending: `GET /admin/approvals`
+3. Resume with `approve`, `edit`, or `reject`
 
 ```powershell
 $resume = @{
@@ -249,11 +331,43 @@ Invoke-RestMethod -Method POST -Uri http://localhost:8000/v1/resume `
   -ContentType "application/json" -Body $resume
 ```
 
-Decision types: `approve`, `edit`, `reject`.
+---
+
+## 9. Workflow templates
+
+Add repeatable multi-agent plans under **`harness/workflows/`** as YAML files. Templates are loaded at bootstrap and matched by tags/patterns in the user message.
+
+Example: `harness/workflows/competitive_sales_brief.yaml`
+
+```yaml
+name: competitive_sales_brief
+description: Research a competitor and analyze advisor sales, then synthesize.
+match_tags: [competitor, sales, advisor]
+variables:
+  competitor:
+    extract: "competitor\\s+([A-Za-z0-9][\\w .'-]+?)(?=\\s+and\\b|...)"
+    default: "the competitor"
+  advisor_name:
+    extract: "advisor\\s+([A-Za-z][A-Za-z .'-]+?)(?=\\s+sales\\b|...)"
+    default: "the advisor"
+tasks:
+  - task_id: t1
+    title: "Research {{competitor}}"
+    assignee: { kind: agent, name: competitor_research }
+    objective: "Research competitor {{competitor}}"
+  - task_id: t2
+    title: "Analyze {{advisor_name}} sales"
+    assignee: { kind: agent, name: agentic_analyzer }
+    objective: "Analyze advisor {{advisor_name}} product sales"
+```
+
+List loaded templates: `GET /admin/workflows`
+
+The synthesizer agent is appended automatically — do not include it in workflow tasks.
 
 ---
 
-## 8. Business context
+## 10. Business context
 
 Add domain knowledge under **`harness/context/`** as YAML files.
 
@@ -283,7 +397,7 @@ Restart the server after changes.
 
 ---
 
-## 9. Adding capabilities
+## 11. Adding capabilities
 
 ### New tool (`harness/tools/my_tool.py`)
 
@@ -334,11 +448,13 @@ max_tokens_budget: 40000
 interrupt_tools: []   # tools requiring HITL
 ```
 
-Restart `harness-serve` after any plugin change.
+### New workflow (`harness/workflows/my_workflow.yaml`)
+
+Define `match_tags`, `variables`, and `tasks` as shown in section 9. Restart `harness-serve` after any plugin change.
 
 ---
 
-## 10. LLM models (`harness/models/models.yaml`)
+## 12. LLM models (`harness/models/models.yaml`)
 
 ```yaml
 models:
@@ -354,6 +470,9 @@ models:
     api_key: ${secret:anthropic-api-key}
 ```
 
+- `primary_reasoner` — agent reasoning
+- `fast_router` — planner and routing disambiguation
+
 Enable LLM-based routing disambiguation in `harness.settings.yaml`:
 
 ```yaml
@@ -362,7 +481,7 @@ routing_use_llm: true
 
 ---
 
-## 11. MCP connectors (`harness/mcp/servers.yaml`)
+## 13. MCP connectors (`harness/mcp/servers.yaml`)
 
 Enable external tool servers (Jira, Confluence, etc.):
 
@@ -379,13 +498,34 @@ MCP tools are registered at bootstrap with `requires_approval: true` by default.
 
 ---
 
-## 12. Data persistence
+## 14. Observability
+
+### Realtime event stream
+
+```bash
+curl -N http://localhost:8000/v1/runs/<trace_id>/events
+```
+
+### Plan waterfall (after a multi-agent run)
+
+```bash
+curl http://localhost:8000/admin/plans/<plan_id>/waterfall
+```
+
+### Langfuse
+
+Set `LANGFUSE_PUBLIC_KEY` + `LANGFUSE_SECRET_KEY` for OTel export to Langfuse dashboard.
+
+---
+
+## 15. Data persistence
 
 | Store | Path (default) | Purpose |
 |-------|----------------|---------|
 | Event ledger | `data/harness_events.db` | Telemetry / waterfall UI |
 | Episodic memory | `data/harness_episodic.db` | Cross-session recall |
 | HITL approvals | `data/harness_approvals.db` | Pending interrupts |
+| Plan snapshots | `data/harness_plans.db` | Execution plans + task results |
 
 Configure paths in `harness.settings.yaml`:
 
@@ -393,24 +533,25 @@ Configure paths in `harness.settings.yaml`:
 telemetry_ledger_db_path: data/harness_events.db
 episodic_db_path: data/harness_episodic.db
 approvals_db_path: data/harness_approvals.db
+orchestration_plans_db_path: data/harness_plans.db
 ```
 
 ---
 
-## 13. What's still pending
+## 16. What's still pending
 
 | Feature | Status |
 |---------|--------|
+| Phase 5 — dynamic sub-agent profiles | Planned (see `spec/phase-5-dynamic-sub-agents.md`) |
 | Reflective / nightly memory curation | Not implemented |
 | Async agent workers (Celery/queue) | Not implemented |
 | Sandbox microVM execution | Not implemented |
-| OTel export to Langfuse | Set `LANGFUSE_PUBLIC_KEY` + `LANGFUSE_SECRET_KEY` |
 | OTel export to Datadog/Honeycomb | Not yet implemented |
 | Hot reload of plugins | Restart required |
 
 ---
 
-## 14. Troubleshooting
+## 17. Troubleshooting
 
 | Issue | Fix |
 |-------|-----|
@@ -419,6 +560,7 @@ approvals_db_path: data/harness_approvals.db
 | Agent fails with provider error | Set `HARNESS_SECRET_ANTHROPIC_API_KEY` or use `force_stub_models: true` |
 | Connector health check fails | Set `connector_health_check: false` in `harness.settings.yaml` |
 | Port 8000 in use | Change `port: 8001` in `harness.settings.yaml` |
+| Plan not matching workflow | Check `GET /admin/workflows`; lower `orchestration_workflow_match_threshold` or add `match_patterns` |
 
 ---
 
@@ -429,11 +571,13 @@ harness/                  # Plugin drop-zones (your code + config)
   tools/                  # @register_tool
   skills/                 # @register_skill
   agents/                 # YAML agents
+  workflows/              # YAML multi-agent plan templates
   context/                # Business context packs
   models/                 # LLM endpoints
   connectors/             # Data sources
   mcp/                    # MCP servers
 src/harness/              # Core engine (rarely edit)
+spec/                     # Orchestration phase specs
 harness.settings.yaml     # Runtime settings
 .env                      # API keys (gitignored)
 SETUP.md                  # This file
