@@ -61,6 +61,10 @@ class AgentManifest(BaseModel):
         default_factory=dict,
         description="Agent-specific configuration (connectors, defaults, stub behavior, output formats)",
     )
+    profile_of: str | None = Field(
+        default=None,
+        description="Base agent name when this manifest is a runtime profile instance",
+    )
 
 
 class ExecutionBudget(BaseModel):

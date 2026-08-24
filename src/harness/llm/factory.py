@@ -8,7 +8,7 @@ from harness.config.models import ModelEndpointConfig
 
 def build_chat_model(cfg: ModelEndpointConfig) -> BaseChatModel:
     if cfg.provider == "stub":
-        return FakeListChatModel(responses=["Research complete. Positioning brief drafted."])
+        return FakeListChatModel(responses=["Stub model response."])
 
     if cfg.provider == "anthropic":
         from langchain_anthropic import ChatAnthropic

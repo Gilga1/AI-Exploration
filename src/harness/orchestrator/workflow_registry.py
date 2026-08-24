@@ -107,7 +107,7 @@ class WorkflowRegistry:
         model_cfg = None
         if self._config is not None:
             model_cfg = next(
-                (m for m in self._config.models.models if m.name == "fast_router"),
+                (m for m in self._config.models.models if m.name == self._settings.orchestration_planner_model),
                 None,
             )
         if model_cfg is None or model_cfg.provider == "stub":

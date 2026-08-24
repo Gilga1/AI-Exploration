@@ -36,6 +36,19 @@ class MarkdownToPdfSkill(BaseSkill):
         sandboxed=False,
     )
 
+    def infer_input(self, message: str) -> dict[str, str]:
+        import re
+
+        title_match = re.search(r"title[:\s]+(.+)", message, flags=re.IGNORECASE)
+        markdown = message
+        if "into a pdf" in message.lower():
+            markdown = re.sub(r"(?i).*?(notes|markdown)[:\s]*", "", message, count=1)
+            markdown = re.sub(r"(?i)\s*into a pdf.*", "", markdown).strip()
+        payload: dict[str, str] = {"markdown": markdown or message}
+        if title_match:
+            payload["title"] = title_match.group(1).strip()
+        return payload
+
     async def execute(self, payload: MdToPdfInput, *, context: RunContext) -> MdToPdfOutput:
         html = markdown_to_html(payload.markdown, payload.title)
         tool = context.tools["render_pdf_from_html"]

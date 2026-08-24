@@ -290,7 +290,9 @@ class Orchestrator:
                 "message": f"Could not dispatch skill {routing.selected!r}.",
             }
 
-        payload_data = request.skill_input or infer_skill_input(routing.selected, request.message)
+        payload_data = request.skill_input or infer_skill_input(
+            routing.selected, request.message, self.registry
+        )
         payload = skill.validate_input(payload_data)
         artifacts = ArtifactStore()
         context = RunContext(

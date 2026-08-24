@@ -57,7 +57,7 @@ class Planner:
             )
 
         model_cfg = next(
-            (m for m in self._config.models.models if m.name == "fast_router"),
+            (m for m in self._config.models.models if m.name == self._settings.orchestration_planner_model),
             None,
         )
         if model_cfg is None or model_cfg.provider == "stub":
@@ -74,7 +74,7 @@ class Planner:
             registry=self._registry,
             config=self._config,
             settings=self._settings,
-            model_name="fast_router",
+            model_name=self._settings.orchestration_planner_model,
             mode=mode,
             capability_index=self._index,
         )

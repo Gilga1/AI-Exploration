@@ -56,6 +56,8 @@ class HarnessSettings(BaseSettings):
     orchestration_plans_db_path: str = "data/harness_plans.db"
     orchestration_alert_webhook_url: str | None = None
     orchestration_planner: Literal["auto", "llm", "template", "hybrid"] = "auto"
+    orchestration_planner_model: str = "fast_router"
+    routing_llm_model: str = "fast_router"
     orchestration_workflow_match_threshold: float = 0.6
 
     @classmethod

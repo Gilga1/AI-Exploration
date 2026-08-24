@@ -33,6 +33,10 @@ class BaseSkill(ABC):
     @abstractmethod
     async def execute(self, payload: BaseModel, *, context: RunContext) -> BaseModel: ...
 
+    def infer_input(self, message: str) -> dict:
+        """Derive skill input fields from a natural-language request."""
+        return {"message": message}
+
     def validate_input(self, raw: dict) -> BaseModel:
         return self.manifest.input_schema.model_validate(raw)
 

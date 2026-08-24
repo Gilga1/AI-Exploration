@@ -57,6 +57,7 @@ class HandoffEvent(TraceEventBase):
     agent_name: str
     budget: ExecutionBudget
     status: str
+    base_agent_name: str | None = None
 
 
 class LLMCallEvent(TraceEventBase):

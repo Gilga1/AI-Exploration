@@ -56,7 +56,10 @@ class TieredRouter:
         if self._settings.routing_use_llm and self._config is not None:
             from harness.llm.router import LLMRouter
 
-            decision = LLMRouter(self._config).disambiguate(message, candidates, trace_id=trace_id)
+            decision = LLMRouter(
+                self._config,
+                router_model=self._settings.routing_llm_model,
+            ).disambiguate(message, candidates, trace_id=trace_id)
             self._emit(trace_id, decision, parent_span_id)
             return decision
 
