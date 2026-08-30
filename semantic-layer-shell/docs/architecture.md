@@ -1,7 +1,7 @@
 # Semantic Layer Shell — Architecture
 ### Pilot: Intelligence Hub
 
-**Status:** Phase 1 implemented (branch `cursor/semantic-layer-shell`)
+**Status:** Phase 2 implemented (branch `cursor/semantic-layer-shell`)
 **Owner:** Shobhit Tiwari
 **Purpose:** A platform-agnostic semantic layer, backed by a Neo4j knowledge graph, that lets AI agents generate deterministic, idempotent SQL against a warehouse (initially Snowflake) without hardcoding to specific views. Business context, metric definitions, and join paths are supplied as data (YAML/Markdown), not code, so the platform is domain-agnostic — this document uses fund/transaction examples for concreteness, but the schema imposes no domain assumptions.
 
@@ -9,28 +9,28 @@
 
 ---
 
-## Implementation status (Phase 1)
+## Implementation status
+
+### Phase 1 — complete
+
+Registry, Neo4j bootstrap, LLM pipeline, deterministic SQL assembly, Snowflake execution, audit log, graph versioning/rollback, header-based RBAC.
+
+### Phase 2 — complete
 
 | Area | Status | Notes |
 |---|---|---|
-| YAML registry parser + validator | Done | Typed folders under `registry/` |
-| Neo4j ingestor + Docker compose | Done | Auto-bootstrap on startup |
-| Graph version activate + rollback | Done | `ProductionPointer` + `current` flag |
-| OpenAI decompose / reason / answer | Done | Heuristic fallback without API key |
-| Embedding + vector search | Done | Neo4j vector indexes with keyword fallback |
-| Deterministic SQL assembler | Done | `backend/app/sql_gen/assembler.py` |
-| Exposed-column validation | Done | Publish-time check on measure outputs |
-| Composition + lineage cycle checks | Done | Python validation before publish |
-| Snowflake execution via env | Done | Missing creds → warning, empty rows |
-| NDJSON query stream + selection confidence | Done | Low-confidence UI hint |
-| SQLite audit log | Done | `GET /api/v1/audit/queries` |
-| React UI (Query, DAG, Registry, Admin) | Done | Vite + TypeScript |
-| LangGraph state machine | Done | Alongside streaming pipeline |
-| RBAC (header-based) | Done | `X-User-Role` header |
-| Graph node PATCH | Done | Metadata edits re-validate + publish |
-| Entity glossary ingest | Done | Sample `entities/fund.yaml` |
-| Real SSO authentication | Planned | Phase 2 |
-| Visual DAG graph layout | Planned | Phase 2 (list view in Phase 1) |
+| Extended pipeline stages | Done | analyze → insights → visualization → explorer → answer |
+| Query result cache | Done | Keyed by graph version + node/edge set + sql_hash |
+| Revision hints | Done | `revision_hint` on query API re-runs reason step |
+| Entity `REPRESENTS` edges | Done | `entity_ref` on columns → Entity nodes |
+| `latest_snapshot` join strategy | Done | Snapshot CTEs prepended in SQL assembler |
+| Dimensional join validation | Done | Join keys validated per source/target column |
+| Visual DAG (React Flow) | Done | `@xyflow/react` in DAG Explorer |
+| SSO / OAuth | Skipped | Header-based `X-User-Role` is sufficient for pilot |
+
+### Phase 3 — planned
+
+Multi-warehouse, row-level security, schema-introspection-assisted YAML authoring.
 
 ---
 
@@ -647,11 +647,12 @@ frontend/src/
 - RBAC: Viewer, Developer, Admin (header-based pilot auth).
 - Manual YAML authoring + UI upload.
 
-**Phase 2**
-- Add statistical-analysis, insights, visualization, revision, and explorer stages (borrowed from the reference LangGraph pipeline).
-- `Entity` business-glossary layer, if a concept turns out to genuinely span multiple sources.
-- Full `latest_snapshot` vs `full_history` join-strategy support for slowly-changing dimensions.
-- Query result caching keyed by resolved node/edge set (not by question text) for true idempotency.
+**Phase 2** *(complete)*
+- Extended pipeline: analyze → insights → visualization → explorer → answer (+ revision hints).
+- Entity glossary: `entity_ref` on columns → `REPRESENTS` edges in Neo4j.
+- `latest_snapshot` vs `full_history` join strategies in SQL assembly.
+- Query result cache keyed by resolved node/edge set + `sql_hash`.
+- Visual DAG explorer (React Flow).
 
 **Phase 3**
 - Multi-warehouse support beyond Snowflake.

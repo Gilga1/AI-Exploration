@@ -14,13 +14,14 @@ python -m scripts.bootstrap_graph
 | `data_sources/` | `data_source` | Physical tables/views, columns, joins, grain |
 | `measures/` | `measure` | Parameterized SQL fragments; **`depends_on`** → data sources |
 | `metrics/` | `metric` | Composed KPIs; **`components`** + optional **`depends_on`** → measures/metrics |
-| `entities/` | `entity` | Business glossary terms (Phase 1 sample; full layer in Phase 2) |
+| `entities/` | `entity` | Business glossary; link from columns via `entity_ref` |
 
 ## Dependency model
 
 - **Measures** declare `depends_on` → `data_source` (which tables the SQL reads).
 - **Metrics** declare `components` (numerator/denominator → measures or nested metrics) for composition edges (`USES_COMPONENT`).
-- **Metrics** may also declare `depends_on` for explicit lineage — typically listing the same measures as in `components`. If omitted, `depends_on` is derived from `components` at validation time.
+- **Metrics** also declare `depends_on` listing the same measures — explicit lineage for validation and audit.
+- **Columns** may set `entity_ref: fund` to create `REPRESENTS` edges to Entity nodes on publish.
 
 ## Pilot samples
 
