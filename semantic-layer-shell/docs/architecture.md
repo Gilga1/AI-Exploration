@@ -216,6 +216,8 @@ spec:
       notes: "See measures using aggregate_via for the required rollups."
 ```
 
+> **Planned (`global_filters`):** Each data source will support mandatory per-view predicates (e.g. `territory_id = '49'`, `contact_global_id IS NOT NULL`) applied on every SQL read — lookup, measure, and snapshot CTE. See [implementation spec §4.1](implementation-spec-grounded-query.md#41-extended-kind-data_source--global_filters).
+
 ### 3.2 `measure` — a parameterized, aggregable SQL fragment
 
 ```yaml
