@@ -1,0 +1,40 @@
+apiVersion: semantic-layer/v1
+kind: measure
+metadata:
+  id: average_daily_balance_by_fund_day
+  name: "Average Daily Balance (by Fund, Day)"
+  description: "Daily balance per fund."
+
+spec:
+  parameters: {}
+
+  time_filter:
+    type: direct
+    column: snapshot_date
+    alias: b
+
+  dimension_context:
+    alias: b
+
+  sql_fragment: |
+    SELECT
+      fund_id,
+      snapshot_date AS transaction_date,
+      AVG(avg_balance) AS avg_balance
+    FROM analytics.marts.fct_daily_fund_balances b
+    GROUP BY ALL
+
+  output_columns:
+    - name: fund_id
+      type: string
+      role: dimension
+    - name: transaction_date
+      type: date
+      role: time_key
+    - name: avg_balance
+      type: decimal
+      role: value
+
+  depends_on:
+    - kind: data_source
+      ref: fct_daily_fund_balances

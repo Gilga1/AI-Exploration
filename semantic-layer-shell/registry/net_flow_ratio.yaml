@@ -1,0 +1,34 @@
+apiVersion: semantic-layer/v1
+kind: metric
+metadata:
+  id: net_flow_ratio
+  name: "Net Flow Ratio"
+  description: "Net transaction flow as a percentage of average daily balance."
+  owner: product-analytics
+  status: active
+  tags: [flows, fund-performance]
+
+spec:
+  metric_type: ratio
+
+  components:
+    numerator:
+      kind: measure
+      ref: total_transaction_amount_by_fund_day
+      parameters:
+        basis: net
+    denominator:
+      kind: measure
+      ref: average_daily_balance_by_fund_day
+
+  formula: "numerator.total_amount / denominator.avg_balance"
+
+  unit: percentage
+  direction: higher_is_better
+
+  dimensions: [fund_id, share_class]
+  time_key: transaction_date
+
+  business_rules:
+    - "Excludes test/internal accounts."
+    - "Ratio is null when the denominator balance is zero."

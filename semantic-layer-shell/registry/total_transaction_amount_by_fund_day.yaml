@@ -1,0 +1,50 @@
+apiVersion: semantic-layer/v1
+kind: measure
+metadata:
+  id: total_transaction_amount_by_fund_day
+  name: "Total Transaction Amount (by Fund, Day)"
+  description: "Rolls transaction-grain data up to fund + day grain."
+
+spec:
+  parameters:
+    basis:
+      default: gross
+      options:
+        gross:
+          column: transaction_amount
+          description: "Gross transaction amount"
+        net:
+          column: net_transaction_amount
+          description: "Net of fees"
+
+  time_filter:
+    type: direct
+    column: transaction_date
+    alias: t
+
+  dimension_context:
+    alias: t
+
+  sql_fragment: |
+    SELECT
+      fund_id,
+      transaction_date,
+      SUM({{basis.column}}) AS total_amount
+    FROM analytics.marts.fct_fund_transactions t
+    WHERE is_test_account = false
+    GROUP BY ALL
+
+  output_columns:
+    - name: fund_id
+      type: string
+      role: dimension
+    - name: transaction_date
+      type: date
+      role: time_key
+    - name: total_amount
+      type: decimal
+      role: value
+
+  depends_on:
+    - kind: data_source
+      ref: fct_fund_transactions

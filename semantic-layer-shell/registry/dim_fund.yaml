@@ -1,0 +1,30 @@
+apiVersion: semantic-layer/v1
+kind: data_source
+metadata:
+  id: dim_fund
+  name: "Fund Dimension"
+  description: "Conformed fund dimension table."
+  owner: data-eng-team
+  status: active
+
+spec:
+  type: dimension
+  location: analytics.marts.dim_fund
+  grain: "one row per fund_id"
+  grain_keys: [fund_id]
+
+  schema_fields:
+    - name: fund_id
+      type: string
+      role: key
+      exposed: true
+    - name: fund_name
+      type: string
+      role: dimension
+      exposed: true
+    - name: share_class
+      type: string
+      role: dimension
+      exposed: true
+
+  joins: []

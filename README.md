@@ -35,6 +35,10 @@ eval/
   golden_prompts.template.jsonl
 ```
 
+## Semantic Layer Shell
+
+A new **Intelligence Hub pilot** lives under [`semantic-layer-shell/`](semantic-layer-shell/). See that directory's README for backend/frontend setup.
+
 ## Training (local CUDA machine)
 
 Install the training stack on a GPU machine:
