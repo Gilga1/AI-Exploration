@@ -13,6 +13,10 @@ from app.registry.models import (
     ValidationResult,
 )
 
+from app.registry.dimension_validation import (
+    validate_compositional_dimension_grain,
+    validate_metric_dimensions,
+)
 from app.registry.graph_validation import (
     validate_composition_acyclic,
     validate_lineage_acyclic,
@@ -281,5 +285,7 @@ def validate_staged_registry(staged: StagedRegistry) -> ValidationResult:
     all_errors.extend(validate_measure_output_exposed(documents))
     all_errors.extend(validate_entity_references(documents))
     all_errors.extend(validate_dimensional_grain(documents))
+    all_errors.extend(validate_metric_dimensions(documents))
+    all_errors.extend(validate_compositional_dimension_grain(documents))
 
     return ValidationResult(passed=len(all_errors) == 0, errors=all_errors)

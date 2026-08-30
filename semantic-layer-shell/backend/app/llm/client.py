@@ -6,7 +6,9 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.agents.dimension_selection import get_metric_dimensions, validate_and_filter_dimensions
 from app.config.settings import get_settings
+from app.graph.resolver import GraphResolver
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +34,10 @@ class LLMClient:
     Falls back to heuristics when OPENAI_API_KEY is not configured.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, resolver: GraphResolver | None = None) -> None:
         self.settings = get_settings()
         self._client: Any = None
+        self.resolver = resolver
 
     @property
     def enabled(self) -> bool:
@@ -98,20 +101,37 @@ class LLMClient:
         metric_id: str | None = None,
     ) -> dict[str, Any]:
         if metric_id:
-            return {"metric_id": metric_id, "parameters": {}, "dimensions": [], "llm": False}
+            selection = {
+                "metric_id": metric_id,
+                "parameters": {},
+                "dimensions": [],
+                "confidence": 1.0,
+                "rationale": "Metric confirmed by caller.",
+                "llm": False,
+                "confirmed": True,
+            }
+            return validate_and_filter_dimensions(selection, metric_id, self.resolver)
 
         if not self.enabled or not candidates:
-            return self._reason_heuristic(candidates)
+            selection = self._reason_heuristic(question, candidates)
+        else:
+            selection = self._reason_with_llm(question, candidates)
 
+        return validate_and_filter_dimensions(
+            selection, selection["metric_id"], self.resolver
+        )
+
+    def _reason_with_llm(self, question: str, candidates: list[dict[str, Any]]) -> dict[str, Any]:
         candidate_lines = "\n".join(
-            f"- id={c['id']} kind={c.get('kind')} name={c.get('name')} description={c.get('description', '')[:120]}"
-            for c in candidates[:15]
+            self._format_candidate(c) for c in candidates[:15]
         )
         try:
             result = self._chat_json(
                 system=(
                     "You select the best metric/measure for a user question from an enumerated candidate list. "
                     "You MUST pick metric_id from the provided ids only — never invent one. "
+                    "For dimensions, you MUST only choose from each metric's allowed_dimensions list when "
+                    "the user asks for a breakdown (e.g. by fund, by share class). "
                     "Return JSON: metric_id, parameters (dict of param->value), dimensions (list), "
                     "confidence (0-1), rationale (short string). Prefer kind=metric when available."
                 ),
@@ -121,7 +141,7 @@ class LLMClient:
             valid_ids = {c["id"] for c in candidates}
             if result.metric_id not in valid_ids:
                 logger.warning("LLM picked invalid metric %s, falling back", result.metric_id)
-                return self._reason_heuristic(candidates)
+                return self._reason_heuristic(question, candidates)
             return {
                 "metric_id": result.metric_id,
                 "parameters": result.parameters,
@@ -132,7 +152,16 @@ class LLMClient:
             }
         except Exception as exc:
             logger.warning("LLM reason failed, using heuristic: %s", exc)
-            return self._reason_heuristic(candidates)
+            return self._reason_heuristic(question, candidates)
+
+    @staticmethod
+    def _format_candidate(candidate: dict[str, Any]) -> str:
+        dims = candidate.get("dimensions") or []
+        dim_text = f" allowed_dimensions={dims}" if dims else ""
+        return (
+            f"- id={candidate['id']} kind={candidate.get('kind')} name={candidate.get('name')} "
+            f"description={str(candidate.get('description', ''))[:120]}{dim_text}"
+        )
 
     def answer(
         self,
@@ -188,14 +217,46 @@ class LLMClient:
         }
 
     @staticmethod
-    def _reason_heuristic(candidates: list[dict[str, Any]]) -> dict[str, Any]:
+    def _infer_dimensions_from_question(question: str, allowed: list[str]) -> list[str]:
+        q = question.lower()
+        inferred: list[str] = []
+        if "fund" in q and "fund_id" in allowed:
+            inferred.append("fund_id")
+        if ("share class" in q or "share_class" in q) and "share_class" in allowed:
+            inferred.append("share_class")
+        return inferred
+
+    def _reason_heuristic(self, question: str, candidates: list[dict[str, Any]]) -> dict[str, Any]:
         metrics = [c for c in candidates if c.get("kind") == "metric"]
-        if metrics:
-            top = metrics[0]
-            return {"metric_id": top["id"], "parameters": {}, "dimensions": [], "llm": False}
-        if candidates:
-            return {"metric_id": candidates[0]["id"], "parameters": {}, "dimensions": [], "llm": False}
-        return {"metric_id": "net_flow_ratio", "parameters": {}, "dimensions": [], "llm": False}
+        pool = metrics or candidates
+        if not pool:
+            return {
+                "metric_id": "net_flow_ratio",
+                "parameters": {},
+                "dimensions": [],
+                "confidence": 0.5,
+                "rationale": "Defaulted to pilot metric.",
+                "llm": False,
+            }
+
+        top = pool[0]
+        second_score = pool[1].get("score", 0.0) if len(pool) > 1 else 0.0
+        top_score = float(top.get("score", 0.85))
+        gap = max(0.0, top_score - float(second_score))
+        confidence = min(0.95, 0.55 + gap)
+
+        dimensions = self._infer_dimensions_from_question(
+            question, top.get("dimensions") or get_metric_dimensions(top["id"], self.resolver)
+        )
+
+        return {
+            "metric_id": top["id"],
+            "parameters": {},
+            "dimensions": dimensions,
+            "confidence": confidence,
+            "rationale": "Heuristic top discovery candidate.",
+            "llm": False,
+        }
 
     @staticmethod
     def _answer_heuristic(metric_id: str, rows: list[dict[str, Any]]) -> str:

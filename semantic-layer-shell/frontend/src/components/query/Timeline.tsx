@@ -22,7 +22,19 @@ export function Timeline({ events }: { events: StreamEvent[] }) {
             <span> (confidence: {Number(selection.confidence).toFixed(2)})</span>
           )}
           {selection.needs_confirmation === true && (
-            <div style={{ color: "#92400e" }}>Low confidence — verify metric selection.</div>
+            <div style={{ color: "#92400e" }}>
+              Low confidence — confirm metric selection below to continue.
+            </div>
+          )}
+          {Array.isArray(selection.dimensions) && selection.dimensions.length > 0 && (
+            <div style={{ marginTop: "0.25rem" }}>
+              <strong>Breakdown:</strong> {(selection.dimensions as string[]).join(", ")}
+            </div>
+          )}
+          {Array.isArray(selection.dimension_warnings) && selection.dimension_warnings.length > 0 && (
+            <div style={{ color: "#92400e", marginTop: "0.25rem" }}>
+              {(selection.dimension_warnings as string[]).join(" ")}
+            </div>
           )}
           {selection.rationale != null && String(selection.rationale) && (
             <div style={{ marginTop: "0.25rem" }}>{String(selection.rationale)}</div>

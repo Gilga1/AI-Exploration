@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from app.graph.neo4j_client import Neo4jClient
-from app.registry.models import MetricDocument
+from app.registry.models import MetricDocument, DataSourceDocument
 from app.registry.parser import parse_registry_directory
 
 
@@ -35,8 +35,9 @@ class GraphResolver:
         OPTIONAL MATCH (ds)-[j:JOINS_TO]->(target:DataSource)
         RETURN m, v.id AS graph_version_id,
                collect(DISTINCT comp) AS components,
-               collect(DISTINCT ds) AS data_sources,
-               collect(DISTINCT {source: ds.id, target: target.id, props: properties(j)}) AS joins
+               collect(DISTINCT ds) + collect(DISTINCT target) AS data_sources,
+               collect(DISTINCT {source: ds.id, target: target.id, props: properties(j)}) AS joins,
+               collect(DISTINCT {measure_id: comp.id, source_id: ds.id}) AS measure_sources
         """
         rows = self.client.run(cypher, {"metric_id": metric_id})
         if rows:
@@ -47,9 +48,44 @@ class GraphResolver:
 
         return self._resolve_from_registry_files(metric_id)
 
+    def _normalize_measure(self, measure: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(measure)
+        dimension_context = normalized.get("dimension_context")
+        if isinstance(dimension_context, str):
+            try:
+                normalized["dimension_context"] = json.loads(dimension_context)
+            except json.JSONDecodeError:
+                normalized["dimension_context"] = {}
+        spec_params = normalized.get("parameters")
+        if isinstance(spec_params, str):
+            try:
+                normalized["spec_parameters"] = json.loads(spec_params)
+            except json.JSONDecodeError:
+                normalized["spec_parameters"] = {}
+        elif spec_params and "spec_parameters" not in normalized:
+            normalized["spec_parameters"] = spec_params
+        return normalized
+
     def _from_neo4j_row(self, metric_id: str, row: dict[str, Any]) -> ResolvedSubgraph:
         metric = dict(row["m"]) if row.get("m") else {"id": metric_id}
-        measures = [dict(m) for m in row.get("components", []) if m]
+        measure_sources: dict[str, list[str]] = {}
+        for link in row.get("measure_sources", []) or []:
+            if not link:
+                continue
+            mid = link.get("measure_id")
+            sid = link.get("source_id")
+            if mid and sid:
+                measure_sources.setdefault(mid, []).append(sid)
+
+        measures = []
+        for m in row.get("components", []) or []:
+            if not m:
+                continue
+            normalized = self._normalize_measure(dict(m))
+            mid = normalized.get("id")
+            if mid and mid in measure_sources:
+                normalized["depends_on_refs"] = measure_sources[mid]
+            measures.append(normalized)
         data_sources = [dict(d) for d in row.get("data_sources", []) if d]
         joins = [j for j in row.get("joins", []) if j and j.get("source")]
         node_ids = [metric_id] + [m.get("id", "") for m in measures] + [d.get("id", "") for d in data_sources]
@@ -87,6 +123,22 @@ class GraphResolver:
         edge_ids: list[str] = []
 
         doc_index = {d.metadata.id: d for d in staged.documents}
+        ds_ids: set[str] = set()
+
+        def add_data_source(ds_doc: DataSourceDocument) -> None:
+            if ds_doc.metadata.id in ds_ids:
+                return
+            ds_ids.add(ds_doc.metadata.id)
+            data_sources.append(
+                {
+                    "id": ds_doc.metadata.id,
+                    "location": ds_doc.spec.location,
+                    "type": ds_doc.spec.type,
+                    "grain_keys": ds_doc.spec.grain_keys,
+                    "schema_fields": [f.model_dump() for f in ds_doc.spec.schema_fields],
+                }
+            )
+            node_ids.append(ds_doc.metadata.id)
 
         for role, component in metric_doc.spec.components.items():
             child = doc_index.get(component.ref)
@@ -98,6 +150,8 @@ class GraphResolver:
                         "parameters": component.parameters,
                         "sql_fragment": child.spec.sql_fragment,  # type: ignore[union-attr]
                         "spec_parameters": child.spec.parameters,  # type: ignore[union-attr]
+                        "dimension_context": child.spec.dimension_context,  # type: ignore[union-attr]
+                        "depends_on_refs": [dep.get("ref", "") for dep in child.spec.depends_on],  # type: ignore[union-attr]
                     }
                 )
                 node_ids.append(child.metadata.id)
@@ -106,18 +160,7 @@ class GraphResolver:
                 for dep in child.spec.depends_on:  # type: ignore[union-attr]
                     ds = doc_index.get(dep.get("ref", ""))
                     if ds and ds.kind == "data_source":
-                        data_sources.append(
-                            {
-                                "id": ds.metadata.id,
-                                "location": ds.spec.location,  # type: ignore[union-attr]
-                                "type": ds.spec.type,  # type: ignore[union-attr]
-                                "grain_keys": ds.spec.grain_keys,  # type: ignore[union-attr]
-                                "schema_fields": [
-                                    f.model_dump() for f in ds.spec.schema_fields  # type: ignore[union-attr]
-                                ],
-                            }
-                        )
-                        node_ids.append(ds.metadata.id)
+                        add_data_source(ds)  # type: ignore[arg-type]
                         edge_ids.append(f"{child.metadata.id}->DEPENDS_ON->{ds.metadata.id}")
                         for join in ds.spec.joins:  # type: ignore[union-attr]
                             joins.append(
@@ -131,6 +174,9 @@ class GraphResolver:
                                 }
                             )
                             edge_ids.append(f"{ds.metadata.id}->JOINS_TO->{join.target}")
+                            target_doc = doc_index.get(join.target)
+                            if target_doc and target_doc.kind == "data_source":
+                                add_data_source(target_doc)  # type: ignore[arg-type]
 
         return ResolvedSubgraph(
             metric_id=metric_id,

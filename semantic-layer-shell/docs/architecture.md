@@ -28,6 +28,15 @@ Registry, Neo4j bootstrap, LLM pipeline, deterministic SQL assembly, Snowflake e
 | Visual DAG (React Flow) | Done | `@xyflow/react` in DAG Explorer |
 | SSO / OAuth | Skipped | Header-based `X-User-Role` is sufficient for pilot |
 
+### Post–Phase 2 hardening — complete
+
+| Area | Status | Notes |
+|---|---|---|
+| Dimension injection pipeline | Done | `metric.dimensions` allow-list; `measure.dimension_context.alias` drives assembler injection |
+| Cross-table dimensions | Done | e.g. `share_class` on `dim_fund` via canonical join + `latest_snapshot` CTE |
+| Reason confidence gate | Done | Pipeline pauses below threshold; UI confirmation resumes with explicit `metric_id` |
+| Compositional grain checks | Done | Metric dimension reachability + non-time join grain validation at publish |
+
 ### Phase 3 — planned
 
 Multi-warehouse, row-level security, schema-introspection-assisted YAML authoring.

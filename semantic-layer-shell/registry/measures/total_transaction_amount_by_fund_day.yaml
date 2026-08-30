@@ -27,7 +27,6 @@ spec:
 
   sql_fragment: |
     SELECT
-      fund_id,
       transaction_date,
       SUM({{basis.column}}) AS total_amount
     FROM analytics.marts.fct_fund_transactions t

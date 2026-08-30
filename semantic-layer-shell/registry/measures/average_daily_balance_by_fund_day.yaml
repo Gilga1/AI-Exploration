@@ -18,7 +18,6 @@ spec:
 
   sql_fragment: |
     SELECT
-      fund_id,
       snapshot_date AS transaction_date,
       AVG(avg_balance) AS avg_balance
     FROM analytics.marts.fct_daily_fund_balances b

@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     query_cache_db_path: str = "/tmp/semantic-layer-cache/results.db"
     query_cache_ttl_seconds: int = 3600
 
+    # Reason step — pipeline pauses below this confidence until user confirms metric
+    reason_confidence_threshold: float = 0.7
+
 
 @lru_cache
 def get_settings() -> Settings:

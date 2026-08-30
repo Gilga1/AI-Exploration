@@ -9,6 +9,8 @@ from app.agents.analysis import analyze_rows
 from app.agents.explorer import MetricExplorer
 from app.agents.insights import generate_insights
 from app.agents.revision import apply_revision
+from app.agents.dimension_selection import enrich_candidates_with_metric_fields
+from app.config.settings import get_settings
 from app.agents.visualization import build_chart_spec
 from app.audit.store import AuditStore
 from app.cache.query_cache import QueryResultCache
@@ -42,7 +44,7 @@ class QueryPipeline:
         self.resolver = GraphResolver(self.client)
         self.assembler = SQLAssembler()
         self.warehouse = SnowflakeClient()
-        self.llm = LLMClient()
+        self.llm = LLMClient(self.resolver)
         self.audit = AuditStore()
         self.cache = QueryResultCache()
         self.explorer = MetricExplorer(self.client)
@@ -82,7 +84,9 @@ class QueryPipeline:
                     candidates = []
                     for term in terms[:3]:
                         candidates.extend(self.discovery.search(term, limit=5))
-                    context["candidates"] = self._dedupe_candidates(candidates)
+                    context["candidates"] = enrich_candidates_with_metric_fields(
+                        self._dedupe_candidates(candidates)
+                    )
                 elif stage == "reason":
                     if revision_hint and context.get("candidates"):
                         context["selection"] = apply_revision(
@@ -97,14 +101,30 @@ class QueryPipeline:
                             question, context["candidates"], metric_id=metric_id
                         )
                     sel = context["selection"]
+                    threshold = get_settings().reason_confidence_threshold
+                    confidence = sel.get("confidence") if sel.get("confidence") is not None else 1.0
+                    needs_confirmation = confidence < threshold and not sel.get("confirmed")
                     yield {
                         "event": "selection",
                         "metric_id": sel.get("metric_id"),
+                        "dimensions": sel.get("dimensions", []),
                         "confidence": sel.get("confidence"),
                         "rationale": sel.get("rationale"),
-                        "needs_confirmation": (sel.get("confidence") or 1.0) < 0.7,
+                        "needs_confirmation": needs_confirmation,
                         "revised": sel.get("revised", False),
+                        "dimension_warnings": sel.get("dimension_warnings", []),
                     }
+                    if needs_confirmation:
+                        yield {
+                            "event": "confirmation_required",
+                            "metric_id": sel.get("metric_id"),
+                            "confidence": confidence,
+                            "candidates": context.get("candidates", [])[:10],
+                            "message": (
+                                "Low confidence metric selection — confirm the metric before continuing."
+                            ),
+                        }
+                        return
                 elif stage == "resolve":
                     selected_id = context["selection"]["metric_id"]
                     subgraph = self.resolver.resolve_metric(selected_id)

@@ -33,4 +33,4 @@ spec:
       cardinality: many-to-one
       type: left
       canonical: true
-      strategy: full_history
+      strategy: latest_snapshot
