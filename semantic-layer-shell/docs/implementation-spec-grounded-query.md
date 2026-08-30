@@ -27,6 +27,7 @@ to produce **correct filtered SQL**, **full result context** (up to 1,000 rows),
 | G4 | Post-SQL: parallel **Insights** + **Visualization** agents on full rows (≤1,000) |
 | G5 | **Validator** applies registry-defined rules; labels insight confidence |
 | G6 | **Fully pluggable registry** — new domain = new YAML only |
+| G7 | **Mandatory view scoping** — every query against a data source applies that source's `global_filters` (territory, nullability, etc.) |
 
 ### Non-goals (this spec)
 
@@ -48,6 +49,8 @@ to produce **correct filtered SQL**, **full result context** (up to 1,000 rows),
 4. **Catalog-driven LLM stages.** Decompose and Reason prompts are built at runtime from the published Neo4j graph (entity types, metrics, dimensions). No fund-specific strings in Python.
 
 5. **Validation in registry.** Thresholds, sanity checks, and confidence downgrade rules are YAML. Code is a generic rule engine.
+
+6. **Global filters are non-negotiable.** Each `data_source` may declare predicates that **must** be applied whenever that view is read — in entity lookup SQL, snapshot CTEs, and measure SQL. They are not overridable by the LLM or the user at query time.
 
 ---
 
@@ -73,7 +76,186 @@ Subtypes (Equity, Class A, ETF) are modeled as **`spec.attributes[]`** on the en
 
 ## 4. Registry schema extensions
 
-### 4.1 Extended `kind: entity`
+### 4.1 Extended `kind: data_source` — `global_filters`
+
+Physical views often carry **mandatory scope** that must apply to every query — territory restrictions, nullability guards, soft-delete exclusions, tenant scoping, etc. These belong on the **data source**, not duplicated inside each measure `sql_fragment` or left to the LLM.
+
+**Example:**
+
+```yaml
+apiVersion: semantic-layer/v1
+kind: data_source
+metadata:
+  id: dim_contact
+  name: "Contact Dimension"
+  description: "Conformed contact dimension for territory 49."
+  status: active
+
+spec:
+  type: dimension
+  location: analytics.marts.dim_contact
+  grain: "one row per contact_global_id"
+  grain_keys: [contact_global_id]
+
+  schema_fields:
+    - name: contact_global_id
+      type: string
+      role: key
+      exposed: true
+    - name: territory_id
+      type: string
+      role: filter
+      exposed: false
+    - name: contact_name
+      type: string
+      role: dimension
+      exposed: true
+
+  # REQUIRED on every SQL read of this view (lookup + measure + snapshot CTE)
+  global_filters:
+    - column: territory_id
+      operator: "="
+      value: "49"
+    - column: contact_global_id
+      operator: is_not_null
+
+  joins: []
+```
+
+**Pilot migration example** — move row-level exclusions out of measure fragments:
+
+```yaml
+# data_sources/fct_fund_transactions.yaml
+spec:
+  global_filters:
+    - column: is_test_account
+      operator: "="
+      value: false
+```
+
+Then remove `WHERE is_test_account = false` from measure `sql_fragment` bodies; the assembler injects it automatically from the data source.
+
+#### 4.1.1 Predicate schema
+
+Each entry in `global_filters` is a structured predicate (not LLM-generated):
+
+| Field | Required | Description |
+|---|---|---|
+| `column` | Yes | Must exist in `schema_fields` on the same data source |
+| `operator` | Yes | See table below |
+| `value` | For scalar ops | string, number, or boolean |
+| `values` | For `in` / `not_in` | list of literals |
+
+**Supported operators (v1):**
+
+| `operator` | SQL shape | Example |
+|---|---|---|
+| `=` | `col = value` | `territory_id = '49'` |
+| `!=` | `col != value` | `status != 'deleted'` |
+| `>` `>=` `<` `<=` | comparison | `amount > 0` |
+| `is_null` | `col IS NULL` | — |
+| `is_not_null` | `col IS NOT NULL` | `contact_global_id IS NOT NULL` |
+| `in` | `col IN (...)` | territory in allow-list |
+| `not_in` | `col NOT IN (...)` | exclude test codes |
+
+**Optional escape hatch** for expressions that cannot be expressed structurally (use sparingly, audit-required):
+
+```yaml
+global_filters:
+  - sql: "territory_id = '49' AND contact_global_id IS NOT NULL"
+```
+
+If both `column`/`operator` entries and `sql` are present on the same data source, all are AND-combined. Publish validation must parse `sql` fragments and ensure referenced columns exist on `schema_fields`.
+
+#### 4.1.2 Assembly rules — when global filters apply
+
+Global filters are applied **whenever** a data source's `location` (or snapshot CTE derived from it) appears in generated SQL:
+
+| SQL context | How filters are applied |
+|---|---|
+| **Measure `sql_fragment`** | AND into `WHERE` on the measure's table alias (`dimension_context.alias`) |
+| **Entity lookup SQL** | AND into `WHERE` on the resolution view (before label/key predicates) |
+| **`latest_snapshot` CTE** | AND inside the CTE subquery on the base `location` |
+| **Joined dimension** | AND on the joined table alias when that data source is introduced via `JOINS_TO` |
+
+**Predicate combination order** (all AND):
+
+```
+global_filters (per referenced data source)
+  AND entity_filters (from resolve_entities)
+  AND time_predicate (from resolve_time)
+  AND measure_fragment_filters (legacy inline WHERE in sql_fragment — migrate away)
+```
+
+Global filters are **never** skipped, including when:
+- No entity mentions were extracted
+- User did not specify a time range
+- Metric has no dimensions
+
+#### 4.1.3 Alias qualification
+
+The assembler qualifies `global_filters.column` with the correct table alias:
+
+| Context | Alias source |
+|---|---|
+| Measure primary fact | `measure.dimension_context.alias` |
+| Entity lookup on `dim_contact` | default alias = `data_source.metadata.id` (e.g. `dim_contact`) |
+| Snapshot CTE | unqualified or inner subquery alias — filters apply inside CTE |
+
+Example assembled lookup SQL:
+
+```sql
+SELECT DISTINCT product_id AS resolved_key, product_name AS resolved_label
+FROM analytics.marts.dim_product dim_product
+WHERE dim_product.territory_id = '49'
+  AND dim_product.contact_global_id IS NOT NULL
+  AND dim_product.product_name ILIKE '%Franklin Income Fund%'
+LIMIT 10
+```
+
+Example measure fragment after injection:
+
+```sql
+SELECT transaction_date, SUM(net_transaction_amount) AS total_amount
+FROM analytics.marts.fct_fund_transactions t
+WHERE t.is_test_account = false              -- from fct global_filters
+  AND t.product_id = 'FIH-001'               -- from entity resolution
+  AND t.transaction_date BETWEEN '...' AND '...'
+GROUP BY ALL
+```
+
+#### 4.1.4 Neo4j storage
+
+`:DataSource` node gains property:
+
+```
+global_filters: JSON   // serialized predicate list
+```
+
+Included in graph provenance / audit: `global_filters_applied: [{data_source_id, predicates[]}]`.
+
+#### 4.1.5 Publish-time validation
+
+1. Every `global_filters[].column` exists in the same data source's `schema_fields`
+2. Columns used in `global_filters` should have `role: filter` (warning if not)
+3. `operator` is in the supported set; `value`/`values` present when required
+4. Optional `sql` escape hatch: static analysis or regex extract column names → must exist on schema
+5. **No conflicting global_filters** across canonical join pair (warning only in v1)
+
+#### 4.1.6 What global filters are NOT
+
+| Concern | Mechanism |
+|---|---|
+| Per-user row-level security | Phase 3 RLS — dynamic per session |
+| Query-time entity filters ("Franklin Income Fund") | `resolve_entities` → `filters[]` |
+| Time windows ("last 2 weeks") | `resolve_time` |
+| Metric parameters (`basis: net`) | Reason → assembler parameter substitution |
+
+Global filters are **static view scope** defined by the registry author, applied on every read.
+
+---
+
+### 4.2 Extended `kind: entity`
 
 ```yaml
 apiVersion: semantic-layer/v1
@@ -161,7 +343,7 @@ spec:
 - `filter_targets` must reference columns on data sources reachable from the metric's measures.
 - Entities without `resolves_via` are **glossary-only** (used for discovery, not SQL filters).
 
-### 4.2 New `kind: validation_policy`
+### 4.3 New `kind: validation_policy`
 
 ```yaml
 apiVersion: semantic-layer/v1
@@ -246,7 +428,7 @@ spec:
 | `expression` | Safe DSL over row + context | Yes |
 | `llm_check` | `prompt` | No (opt-in) |
 
-### 4.3 Metric extension — link validation policy
+### 4.4 Metric extension — link validation policy
 
 ```yaml
 # On metric spec (optional — fallback to global default policy)
@@ -256,7 +438,7 @@ spec:
 
 If omitted, ingestor may attach a `default_validation` policy document.
 
-### 4.4 Measure extension — time filter (existing, now wired)
+### 4.5 Measure extension — time filter (existing, now wired)
 
 ```yaml
 spec:
@@ -268,7 +450,7 @@ spec:
 
 Assembler must inject `AND t.transaction_date BETWEEN :start AND :end` when a time range is resolved.
 
-### 4.5 Column `entity_ref` (existing)
+### 4.6 Column `entity_ref` (existing)
 
 Keep linking fact/dim columns to entity ids for `REPRESENTS` edges and filter-target validation.
 
@@ -280,6 +462,7 @@ Keep linking fact/dim columns to entity ids for `REPRESENTS` edges and filter-ta
 
 | Label | Key properties |
 |---|---|
+| `:DataSource` | *(extended)* `global_filters` (JSON) added to existing properties |
 | `:Entity` | `id`, `name`, `description`, `definition_embedding`, `synonyms[]`, `attributes` (JSON), `resolves_via` (JSON), `filter_targets` (JSON) |
 | `:ValidationPolicy` | `id`, `name`, `description`, `rules` (JSON), `confidence_aggregation` |
 
@@ -433,7 +616,7 @@ Enrich candidates with `dimensions`, `synonyms`, `validation_policy` ref.
 
 **Per mention:**
 
-1. Load `Entity.resolves_via` → `DataSource.location`, columns, `match` strategy
+1. Load `Entity.resolves_via` → `DataSource.location`, columns, `match` strategy, **`global_filters`**
 2. Apply `correlate_with` predicates from already-resolved filters
 3. **Assemble lookup SQL** (deterministic template):
 
@@ -441,11 +624,14 @@ Enrich candidates with `dimensions`, `synonyms`, `validation_policy` ref.
 SELECT DISTINCT
   {key_column} AS resolved_key,
   {label_column} AS resolved_label
-FROM {location_or_snapshot_cte}
-WHERE {label_predicate}
+FROM {location_or_snapshot_cte} {alias}
+WHERE {global_filters_for_this_data_source}
+  AND {label_predicate}
   {correlation_predicates}
 LIMIT {limit}
 ```
+
+`{global_filters_for_this_data_source}` is assembled from `data_source.spec.global_filters` (§4.1), qualified with `{alias}`.
 
 **Label predicates by `match`:**
 
@@ -534,13 +720,16 @@ Unchanged — exact subgraph fetch by `metric_id`.
 
 **Inject into each measure CTE:**
 
-1. Dimension columns (existing)
-2. **Entity filters** — `AND alias.column = :value` for each filter whose column exists on measure's primary fact or joined dims
-3. **Time predicate** — from `measure.time_filter.alias` + column
+1. **`global_filters`** for the measure's primary `depends_on` data source(s) and any joined data sources (§4.1.2)
+2. Dimension columns (existing)
+3. **Entity filters** — `AND alias.column = :value` for each filter whose column exists on measure's primary fact or joined dims
+4. **Time predicate** — from `measure.time_filter.alias` + column
 
-**Cache key** must include `filters` + `time_range` hash.
+**Snapshot CTEs** (`latest_snapshot`): inject `global_filters` inside the CTE body on the base `location` before `QUALIFY`.
 
-**NDJSON:** `sql_preview` includes `filters_applied`, `time_range_applied`, `resolution_sql`.
+**Cache key** must include `filters` + `time_range` hash (global filters are static per graph version — no cache key change needed).
+
+**NDJSON:** `sql_preview` includes `filters_applied`, `time_range_applied`, `global_filters_applied`, `resolution_sql`.
 
 ---
 
@@ -701,8 +890,9 @@ backend/app/
 │   ├── validator.py             # NEW — YAML rule engine
 │   └── response_composer.py     # NEW — final payload
 ├── sql_gen/
-│   ├── assembler.py             # + filters + time injection
-│   ├── lookup_assembler.py      # NEW — entity resolution SQL
+│   ├── assembler.py             # + filters + time + global_filters injection
+│   ├── lookup_assembler.py      # NEW — entity resolution SQL (+ global_filters)
+│   ├── filter_assembler.py      # NEW — global_filters predicate builder (shared)
 │   └── dimension_resolver.py    # existing
 ├── registry/
 │   ├── models.py                # + ValidationPolicy, EntitySpec
@@ -783,6 +973,10 @@ Example: `denominator != 0 OR metric_value IS NULL`
     "sql_hash": "...",
     "filters_applied": [...],
     "time_range_applied": {...},
+    "global_filters_applied": [
+      { "data_source_id": "fct_fund_transactions", "predicates": ["is_test_account = false"] },
+      { "data_source_id": "dim_product", "predicates": ["territory_id = '49'", "contact_global_id IS NOT NULL"] }
+    ],
     "entity_resolutions": [...]
   }
 }
@@ -833,13 +1027,15 @@ Remove or gate behind `DEBUG_FALLBACK` only:
 
 Add to `validate_staged_registry`:
 
-1. Every `entity.resolves_via.data_source` resolves
-2. `label_column` / `key_column` exist on that data source
-3. Every `filter_targets` column exists on declared data source
-4. `validation_policy.applies_to` refs exist
-5. Rule `column` refs exist in metric measure `output_columns` or known aliases
-6. No duplicate `entity.metadata.id`
-7. `attributes[].values` non-empty when `attributes` declared
+1. Every `global_filters[].column` exists on the same data source's `schema_fields` (§4.1.5)
+2. Every `entity.resolves_via.data_source` resolves
+3. `label_column` / `key_column` exist on that data source
+4. Every `filter_targets` column exists on declared data source
+5. `validation_policy.applies_to` refs exist
+6. Rule `column` refs exist in metric measure `output_columns` or known aliases
+7. No duplicate `entity.metadata.id`
+8. `attributes[].values` non-empty when `attributes` declared
+9. Measures should not duplicate `global_filters` predicates already declared on their `depends_on` data source (lint warning)
 
 ---
 
@@ -872,13 +1068,17 @@ Add to `validate_staged_registry`:
 
 ### Phase C — Time resolution + filter assembly
 
-**Files:** `time_resolution.py`, `assembler.py`
+**Files:** `time_resolution.py`, `assembler.py`, `filter_assembler.py`, `data_sources/*.yaml`
 
 | Acceptance test |
 |---|
+| `global_filters` on data source appear in assembled SQL for measures that `depends_on` it |
+| `global_filters` appear in entity lookup SQL on the same view |
+| `global_filters` appear inside `latest_snapshot` CTEs |
 | "last 2 weeks" → `BETWEEN` in SQL preview |
-| `product_id` + `share_class` filters in assembled SQL |
-| Cache key includes filters + time |
+| `product_id` + `share_class` entity filters in assembled SQL |
+| Cache key includes entity filters + time |
+| Pilot: `is_test_account = false` moved to `fct_fund_transactions.global_filters`, removed from measure fragments |
 
 ---
 
@@ -925,9 +1125,9 @@ Add to `validate_staged_registry`:
 | decompose | `mentions: [product: Franklin Income Fund, share_class: A]`, `time_range: last 2 weeks` |
 | discover | `total_sales` metric candidate (score 0.89) |
 | reason | `metric_id: total_sales`, `basis: gross`, bindings for both mentions |
-| resolve_entities | Lookup SQL on `dim_product` → `product_id=FIH-001`, `share_class=A` |
+| resolve_entities | Lookup SQL on `dim_product` (with `global_filters`) → `product_id=FIH-001`, `share_class=A` |
 | resolve_time | `2026-08-16` .. `2026-08-30` |
-| assemble | `WHERE product_id='FIH-001' AND share_class='A' AND transaction_date BETWEEN ...` |
+| assemble | `WHERE is_test_account = false` (global) AND `product_id='FIH-001'` AND `share_class='A'` AND `transaction_date BETWEEN ...` |
 | execute | 14 daily rows |
 | insights | "Total gross sales $12.4M" with `evidence: sum(total_amount)` |
 | visualization | Daily line chart |
@@ -943,7 +1143,8 @@ Add to `validate_staged_registry`:
 | Disambiguation UX | Pause pipeline; user picks from candidates; resume with `disambiguation` in request |
 | `llm_check` validation rules | Disabled by default (`enabled: false`) |
 | Resolution query warehouse | Same Snowflake connection as main query |
-| Snapshot strategy on lookup dims | Use same `latest_snapshot` CTE logic as measure joins |
+| Snapshot strategy on lookup dims | Use same `latest_snapshot` CTE logic as measure joins; `global_filters` inside CTE |
+| Duplicate filters in measure YAML | Publish warning if measure `sql_fragment` repeats a `global_filters` predicate |
 
 ---
 
@@ -952,3 +1153,4 @@ Add to `validate_staged_registry`:
 | Date | Change |
 |---|---|
 | 2026-08-30 | Initial spec — Option A flat entities, SQL resolution, validation policies, post-SQL agents |
+| 2026-08-30 | Added `data_source.global_filters` — mandatory per-view predicates on all SQL paths |
