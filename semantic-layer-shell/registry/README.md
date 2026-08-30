@@ -14,7 +14,7 @@ python -m scripts.bootstrap_graph
 | `data_sources/` | `data_source` | Physical tables/views, columns, joins, grain |
 | `measures/` | `measure` | Parameterized SQL fragments; **`depends_on`** → data sources |
 | `metrics/` | `metric` | Composed KPIs; **`components`** + optional **`depends_on`** → measures/metrics |
-| `entities/` | `entity` | Business glossary; link from columns via `entity_ref` |
+| `entities/` | `entity` | Business glossary + resolution plumbing (`resolves_via`) — see [implementation spec](docs/implementation-spec-grounded-query.md) |
 
 ## Dependency model
 

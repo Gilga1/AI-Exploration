@@ -5,7 +5,7 @@
 **Owner:** Shobhit Tiwari
 **Purpose:** A platform-agnostic semantic layer, backed by a Neo4j knowledge graph, that lets AI agents generate deterministic, idempotent SQL against a warehouse (initially Snowflake) without hardcoding to specific views. Business context, metric definitions, and join paths are supplied as data (YAML/Markdown), not code, so the platform is domain-agnostic — this document uses fund/transaction examples for concreteness, but the schema imposes no domain assumptions.
 
-**Related docs:** [Setup guide](setup.md) · [Project README](../README.md)
+**Related docs:** [Setup guide](setup.md) · [Project README](../README.md) · [Grounded query implementation spec](implementation-spec-grounded-query.md)
 
 ---
 
@@ -40,6 +40,8 @@ Registry, Neo4j bootstrap, LLM pipeline, deterministic SQL assembly, Snowflake e
 ### Phase 3 — planned
 
 Multi-warehouse, row-level security, schema-introspection-assisted YAML authoring.
+
+See **[Grounded query implementation spec](implementation-spec-grounded-query.md)** for the next major delivery: entity mention extraction, SQL-based name→ID resolution, time filters, Insights/Visualization/Validator agents, and YAML-driven validation policies.
 
 ---
 
