@@ -4,12 +4,19 @@ import json
 from typing import Any, AsyncIterator
 
 from app.agents.nodes import QueryPipeline
-from app.config.settings import get_settings
 
 
-async def stream_query_events(question: str, metric_id: str | None = None) -> AsyncIterator[str]:
+async def stream_query_events(
+    question: str,
+    metric_id: str | None = None,
+    revision_hint: str | None = None,
+) -> AsyncIterator[str]:
     pipeline = QueryPipeline()
-    async for event in pipeline.run(question=question, metric_id=metric_id):
+    async for event in pipeline.run(
+        question=question,
+        metric_id=metric_id,
+        revision_hint=revision_hint,
+    ):
         yield json.dumps(event) + "\n"
 
 

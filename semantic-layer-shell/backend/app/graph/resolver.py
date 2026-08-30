@@ -111,6 +111,7 @@ class GraphResolver:
                                 "id": ds.metadata.id,
                                 "location": ds.spec.location,  # type: ignore[union-attr]
                                 "type": ds.spec.type,  # type: ignore[union-attr]
+                                "grain_keys": ds.spec.grain_keys,  # type: ignore[union-attr]
                                 "schema_fields": [
                                     f.model_dump() for f in ds.spec.schema_fields  # type: ignore[union-attr]
                                 ],
@@ -126,6 +127,7 @@ class GraphResolver:
                                     "on": join.on,
                                     "type": join.type,
                                     "canonical": join.canonical,
+                                    "strategy": join.strategy,
                                 }
                             )
                             edge_ids.append(f"{ds.metadata.id}->JOINS_TO->{join.target}")

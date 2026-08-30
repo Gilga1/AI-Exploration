@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchJson } from "../../services/api";
+import { DagGraphView } from "./DagGraphView";
 import { NodeInspector } from "./NodeInspector";
 
 type DagPayload = {
@@ -29,27 +30,12 @@ export function DagExplorer() {
           </button>
         ))}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-        <div>
-          <h3>Nodes ({dag?.nodes.length ?? 0})</h3>
-          <ul>
-            {dag?.nodes.map((n) => (
-              <li key={n.id}>
-                <button onClick={() => setSelectedId(n.id)}>
-                  {n.name} <small>({n.label})</small>
-                </button>
-              </li>
-            ))}
-          </ul>
-          <h3>Edges ({dag?.edges.length ?? 0})</h3>
-          <ul>
-            {dag?.edges.map((e, i) => (
-              <li key={i}>
-                {e.source} —{e.type}→ {e.target}
-              </li>
-            ))}
-          </ul>
-        </div>
+      {dag && dag.nodes.length > 0 ? (
+        <DagGraphView key={subgraph} dag={dag} onSelect={setSelectedId} />
+      ) : (
+        <p>No nodes in this subgraph.</p>
+      )}
+      <div style={{ marginTop: "1rem" }}>
         <NodeInspector nodeId={selectedId} />
       </div>
     </div>

@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 
 from app.graph.resolver import ResolvedSubgraph
+from app.sql_gen.join_strategy import prepend_snapshot_ctes
 
 PARAM_PATTERN = re.compile(r"\{\{(\w+)\.(\w+)\}\}")
 
@@ -54,7 +55,8 @@ class SQLAssembler:
         )
 
     def _assemble_from_measures(self, subgraph: ResolvedSubgraph, parameters: dict[str, str]) -> str:
-        ctes: list[str] = []
+        snapshot_ctes = prepend_snapshot_ctes(subgraph.joins, subgraph.data_sources)
+        ctes: list[str] = list(snapshot_ctes)
         for measure in subgraph.measures:
             role = measure.get("role", measure.get("id"))
             fragment = measure.get("sql_fragment", "")

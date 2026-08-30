@@ -46,8 +46,8 @@ spec:
       cardinality: many-to-one
       type: left
       canonical: true
-      strategy: full_history
-      notes: "Standard conformed dimension join."
+      strategy: latest_snapshot
+      notes: "Point-in-time fund attributes — latest snapshot per fund_id."
 
     - target: fct_daily_fund_balances
       "on": "fund_id = fund_id, transaction_date = snapshot_date"

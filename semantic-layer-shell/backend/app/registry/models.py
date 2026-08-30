@@ -32,6 +32,7 @@ class SchemaField(BaseModel):
     exposed: bool = True
     pii: bool = False
     description: str = ""
+    entity_ref: str | None = None
 
 
 class JoinSpec(BaseModel):

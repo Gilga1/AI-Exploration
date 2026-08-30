@@ -55,6 +55,32 @@ class RegistryIngestor:
         for doc in staged.documents:
             statements.extend(self._document_statements(doc, version_id))
 
+        statements.extend(self._represents_statements(staged))
+
+        return statements
+
+    def _represents_statements(self, staged: StagedRegistry) -> list[tuple[str, dict[str, Any]]]:
+        statements: list[tuple[str, dict[str, Any]]] = []
+        for doc in staged.documents:
+            if not isinstance(doc, DataSourceDocument):
+                continue
+            for field in doc.spec.schema_fields:
+                if not field.entity_ref:
+                    continue
+                statements.append(
+                    (
+                        """
+                        MATCH (d:DataSource {id: $source_id})-[:HAS_COLUMN]->(c:Column {name: $col_name, source_id: $source_id})
+                        MATCH (e:Entity {id: $entity_id})
+                        MERGE (c)-[:REPRESENTS]->(e)
+                        """,
+                        {
+                            "source_id": doc.metadata.id,
+                            "col_name": field.name,
+                            "entity_id": field.entity_ref,
+                        },
+                    )
+                )
         return statements
 
     def _document_statements(
@@ -108,6 +134,7 @@ class RegistryIngestor:
                                 "exposed": field.exposed,
                                 "pii": field.pii,
                                 "description": field.description,
+                                "entity_ref": field.entity_ref,
                             },
                         },
                     )

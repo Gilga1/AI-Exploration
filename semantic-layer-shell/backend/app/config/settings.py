@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     registry_staging_dir: str = "/tmp/semantic-layer-staging"
     auto_publish_registry: bool = True
     audit_db_path: str = "/tmp/semantic-layer-audit/queries.db"
+    query_cache_db_path: str = "/tmp/semantic-layer-cache/results.db"
+    query_cache_ttl_seconds: int = 3600
 
 
 @lru_cache

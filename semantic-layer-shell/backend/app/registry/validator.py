@@ -207,6 +207,65 @@ def validate_measure_output_exposed(documents: list[RegistryDocument]) -> list[V
     return errors
 
 
+def validate_entity_references(documents: list[RegistryDocument]) -> list[ValidationError]:
+    errors: list[ValidationError] = []
+    index = _index_documents(documents)
+    entity_ids = {d.metadata.id for d in documents if d.kind == "entity"}
+
+    for doc in documents:
+        if not isinstance(doc, DataSourceDocument):
+            continue
+        for field in doc.spec.schema_fields:
+            if field.entity_ref and field.entity_ref not in entity_ids:
+                errors.append(
+                    ValidationError(
+                        code="missing_entity_ref",
+                        message=f"column {field.name!r} references unknown entity {field.entity_ref!r}",
+                        node_id=doc.metadata.id,
+                    )
+                )
+    return errors
+
+
+def validate_dimensional_grain(documents: list[RegistryDocument]) -> list[ValidationError]:
+    """Ensure join keys reference declared columns on both endpoints."""
+    errors: list[ValidationError] = []
+    index = _index_documents(documents)
+
+    for doc in documents:
+        if not isinstance(doc, DataSourceDocument):
+            continue
+        source_cols = {f.name for f in doc.spec.schema_fields}
+        for join in doc.spec.joins:
+            target = index.get(join.target)
+            if not isinstance(target, DataSourceDocument):
+                continue
+            target_cols = {f.name for f in target.spec.schema_fields}
+            for clause in join.on.split(","):
+                if "=" not in clause:
+                    continue
+                left, right = clause.split("=", 1)
+                left_key = left.strip().split(".")[-1]
+                right_key = right.strip().split(".")[-1]
+                if left_key not in source_cols:
+                    errors.append(
+                        ValidationError(
+                            code="join_key_not_on_source",
+                            message=f"source key {left_key!r} not in {doc.metadata.id} columns",
+                            edge_id=f"{doc.metadata.id}->JOINS_TO->{join.target}",
+                        )
+                    )
+                if right_key not in target_cols:
+                    errors.append(
+                        ValidationError(
+                            code="join_key_not_on_target",
+                            message=f"target key {right_key!r} not in {join.target} columns",
+                            edge_id=f"{doc.metadata.id}->JOINS_TO->{join.target}",
+                        )
+                    )
+    return errors
+
+
 def validate_staged_registry(staged: StagedRegistry) -> ValidationResult:
     documents = staged.documents
     all_errors: list[ValidationError] = []
@@ -220,5 +279,7 @@ def validate_staged_registry(staged: StagedRegistry) -> ValidationResult:
     all_errors.extend(validate_composition_acyclic(documents))
     all_errors.extend(validate_lineage_acyclic(documents))
     all_errors.extend(validate_measure_output_exposed(documents))
+    all_errors.extend(validate_entity_references(documents))
+    all_errors.extend(validate_dimensional_grain(documents))
 
     return ValidationResult(passed=len(all_errors) == 0, errors=all_errors)

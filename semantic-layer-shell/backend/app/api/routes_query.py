@@ -19,6 +19,7 @@ router = APIRouter(tags=["query"])
 class QueryRequest(BaseModel):
     question: str
     metric_id: str | None = None
+    revision_hint: str | None = None
 
 
 class SqlPreviewRequest(BaseModel):
@@ -37,7 +38,11 @@ async def query_stream(body: QueryRequest, user: dict = Depends(require_scope("q
     del user
 
     async def event_generator():
-        async for line in stream_query_events(body.question, metric_id=body.metric_id):
+        async for line in stream_query_events(
+            body.question,
+            metric_id=body.metric_id,
+            revision_hint=body.revision_hint,
+        ):
             yield line
 
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
@@ -47,7 +52,11 @@ async def query_stream(body: QueryRequest, user: dict = Depends(require_scope("q
 async def query_sync(body: QueryRequest, user: dict = Depends(require_scope("query"))) -> dict[str, Any]:
     del user
     events: list[dict[str, Any]] = []
-    async for line in stream_query_events(body.question, metric_id=body.metric_id):
+    async for line in stream_query_events(
+        body.question,
+        metric_id=body.metric_id,
+        revision_hint=body.revision_hint,
+    ):
         import json
 
         events.append(json.loads(line))

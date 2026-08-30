@@ -5,7 +5,13 @@ from typing import Any, AsyncIterator, TypedDict
 
 from langgraph.graph import END, StateGraph
 
+from app.agents.analysis import analyze_rows
+from app.agents.explorer import MetricExplorer
+from app.agents.insights import generate_insights
+from app.agents.revision import apply_revision
+from app.agents.visualization import build_chart_spec
 from app.audit.store import AuditStore
+from app.cache.query_cache import QueryResultCache
 from app.graph.discovery import GraphDiscovery
 from app.graph.neo4j_client import get_neo4j_client
 from app.graph.resolver import GraphResolver
@@ -17,6 +23,7 @@ from app.warehouse.snowflake_client import SnowflakeClient
 class PipelineState(TypedDict, total=False):
     question: str
     metric_id: str | None
+    revision_hint: str | None
     intent: dict[str, Any]
     candidates: list[dict[str, Any]]
     selection: dict[str, Any]
@@ -24,6 +31,7 @@ class PipelineState(TypedDict, total=False):
     assembled: Any
     rows: list[dict[str, Any]]
     columns: list[str]
+    analysis: dict[str, Any]
     events: list[dict[str, Any]]
 
 
@@ -36,10 +44,32 @@ class QueryPipeline:
         self.warehouse = SnowflakeClient()
         self.llm = LLMClient()
         self.audit = AuditStore()
+        self.cache = QueryResultCache()
+        self.explorer = MetricExplorer(self.client)
 
-    async def run(self, question: str, metric_id: str | None = None) -> AsyncIterator[dict[str, Any]]:
-        stages = ["decompose", "discover", "reason", "resolve", "assemble", "execute", "answer"]
-        context: dict[str, Any] = {"question": question}
+    async def run(
+        self,
+        question: str,
+        metric_id: str | None = None,
+        revision_hint: str | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        stages = [
+            "decompose",
+            "discover",
+            "reason",
+            "resolve",
+            "assemble",
+            "execute",
+            "analyze",
+            "insights",
+            "visualization",
+            "explorer",
+            "answer",
+        ]
+        context: dict[str, Any] = {
+            "question": question,
+            "revision_hint": revision_hint,
+        }
 
         for stage in stages:
             start = time.perf_counter()
@@ -54,9 +84,18 @@ class QueryPipeline:
                         candidates.extend(self.discovery.search(term, limit=5))
                     context["candidates"] = self._dedupe_candidates(candidates)
                 elif stage == "reason":
-                    context["selection"] = self.llm.reason(
-                        question, context["candidates"], metric_id=metric_id
-                    )
+                    if revision_hint and context.get("candidates"):
+                        context["selection"] = apply_revision(
+                            self.llm,
+                            question,
+                            revision_hint,
+                            context.get("selection", {}),
+                            context["candidates"],
+                        )
+                    else:
+                        context["selection"] = self.llm.reason(
+                            question, context["candidates"], metric_id=metric_id
+                        )
                     sel = context["selection"]
                     yield {
                         "event": "selection",
@@ -64,6 +103,7 @@ class QueryPipeline:
                         "confidence": sel.get("confidence"),
                         "rationale": sel.get("rationale"),
                         "needs_confirmation": (sel.get("confidence") or 1.0) < 0.7,
+                        "revised": sel.get("revised", False),
                     }
                 elif stage == "resolve":
                     selected_id = context["selection"]["metric_id"]
@@ -91,19 +131,65 @@ class QueryPipeline:
                     }
                 elif stage == "execute":
                     assembled = context["assembled"]
-                    try:
-                        rows, columns = self.warehouse.execute(assembled.sql)
-                    except RuntimeError as exc:
-                        if not self.warehouse.is_configured:
-                            rows, columns = [], []
-                            yield {"event": "warning", "stage": "execute", "message": str(exc)}
-                        else:
-                            raise
+                    selection = context["selection"]
+                    cache_key = QueryResultCache.make_key(
+                        graph_version_id=assembled.graph_version_id,
+                        node_ids=assembled.node_ids,
+                        edge_ids=assembled.edge_ids,
+                        parameters=selection.get("parameters"),
+                        dimensions=selection.get("dimensions"),
+                        sql_hash=assembled.sql_hash,
+                    )
+                    context["cache_key"] = cache_key
+                    cached = self.cache.get(cache_key)
+                    if cached:
+                        rows, columns = cached
+                        yield {"event": "cache_hit", "cache_key": cache_key}
+                    else:
+                        try:
+                            rows, columns = self.warehouse.execute(assembled.sql)
+                        except RuntimeError as exc:
+                            if not self.warehouse.is_configured:
+                                rows, columns = [], []
+                                yield {"event": "warning", "stage": "execute", "message": str(exc)}
+                            else:
+                                raise
+                        if rows:
+                            self.cache.set(cache_key, rows, columns)
                     context["rows"] = rows
                     context["columns"] = columns
                     yield {"event": "data_rows", "rows": rows, "columns": columns}
+                elif stage == "analyze":
+                    context["analysis"] = analyze_rows(
+                        context.get("rows", []), context.get("columns", [])
+                    )
+                    yield {"event": "analysis", "analysis": context["analysis"]}
+                elif stage == "insights":
+                    text = generate_insights(
+                        self.llm,
+                        question,
+                        context["selection"]["metric_id"],
+                        context.get("analysis", {}),
+                        context.get("rows", []),
+                    )
+                    context["insights"] = text
+                    yield {"event": "insights", "delta": text}
+                elif stage == "visualization":
+                    chart = build_chart_spec(
+                        context.get("rows", []),
+                        context.get("columns", []),
+                        context["selection"]["metric_id"],
+                    )
+                    context["chart"] = chart
+                    if chart:
+                        yield {"event": "visualization", "chart": chart}
+                elif stage == "explorer":
+                    related = self.explorer.related_metrics(context["selection"]["metric_id"])
+                    context["related_metrics"] = related
+                    yield {"event": "explorer", "related_metrics": related}
                 elif stage == "answer":
                     assembled = context.get("assembled")
+                    insights = context.get("insights", "")
                     answer = self.llm.answer(
                         question=question,
                         metric_id=context["selection"]["metric_id"],
@@ -111,6 +197,8 @@ class QueryPipeline:
                         columns=context.get("columns", []),
                         sql=getattr(assembled, "sql", None),
                     )
+                    if insights and insights not in answer:
+                        answer = f"{answer}\n\n{insights}"
                     yield {"event": "token", "stage": "answer", "delta": answer}
             except Exception as exc:
                 yield {"event": "error", "stage": stage, "error": str(exc)}
@@ -131,16 +219,21 @@ class QueryPipeline:
             node_ids=getattr(assembled, "node_ids", None),
             edge_ids=getattr(assembled, "edge_ids", None),
             selection_confidence=selection.get("confidence"),
-            extra={"rationale": selection.get("rationale")},
+            extra={
+                "rationale": selection.get("rationale"),
+                "cache_key": context.get("cache_key"),
+                "revised": selection.get("revised", False),
+            },
         )
 
         yield {
             "event": "done",
             "result": {
-                "metric_id": context.get("selection", {}).get("metric_id"),
-                "sql_hash": getattr(context.get("assembled"), "sql_hash", None),
+                "metric_id": selection.get("metric_id"),
+                "sql_hash": getattr(assembled, "sql_hash", None),
                 "row_count": len(context.get("rows", [])),
                 "llm_enabled": self.llm.enabled,
+                "cache_key": context.get("cache_key"),
             },
         }
 
@@ -156,7 +249,7 @@ class QueryPipeline:
 
 
 def build_langgraph_pipeline() -> Any:
-    """LangGraph state machine mirroring the streaming pipeline stages."""
+    """LangGraph state machine for Phase 2 pipeline (non-streaming path)."""
     pipeline = QueryPipeline()
 
     def decompose_node(state: PipelineState) -> PipelineState:
@@ -172,9 +265,18 @@ def build_langgraph_pipeline() -> Any:
         return state
 
     def reason_node(state: PipelineState) -> PipelineState:
-        state["selection"] = pipeline.llm.reason(
-            state["question"], state.get("candidates", []), metric_id=state.get("metric_id")
-        )
+        if state.get("revision_hint"):
+            state["selection"] = apply_revision(
+                pipeline.llm,
+                state["question"],
+                state["revision_hint"],
+                state.get("selection", {}),
+                state.get("candidates", []),
+            )
+        else:
+            state["selection"] = pipeline.llm.reason(
+                state["question"], state.get("candidates", []), metric_id=state.get("metric_id")
+            )
         return state
 
     def resolve_node(state: PipelineState) -> PipelineState:
@@ -195,9 +297,30 @@ def build_langgraph_pipeline() -> Any:
         return state
 
     def execute_node(state: PipelineState) -> PipelineState:
-        rows, columns = pipeline.warehouse.execute(state["assembled"].sql)
-        state["rows"] = rows
-        state["columns"] = columns
+        assembled = state["assembled"]
+        selection = state["selection"]
+        cache_key = QueryResultCache.make_key(
+            graph_version_id=assembled.graph_version_id,
+            node_ids=assembled.node_ids,
+            edge_ids=assembled.edge_ids,
+            parameters=selection.get("parameters"),
+            dimensions=selection.get("dimensions"),
+            sql_hash=assembled.sql_hash,
+        )
+        cached = pipeline.cache.get(cache_key)
+        if cached:
+            state["rows"], state["columns"] = cached
+        else:
+            try:
+                state["rows"], state["columns"] = pipeline.warehouse.execute(assembled.sql)
+            except RuntimeError:
+                state["rows"], state["columns"] = [], []
+            if state["rows"]:
+                pipeline.cache.set(cache_key, state["rows"], state["columns"])
+        return state
+
+    def analyze_node(state: PipelineState) -> PipelineState:
+        state["analysis"] = analyze_rows(state.get("rows", []), state.get("columns", []))
         return state
 
     graph = StateGraph(PipelineState)
@@ -207,11 +330,13 @@ def build_langgraph_pipeline() -> Any:
     graph.add_node("resolve", resolve_node)
     graph.add_node("assemble", assemble_node)
     graph.add_node("execute", execute_node)
+    graph.add_node("analyze", analyze_node)
     graph.set_entry_point("decompose")
     graph.add_edge("decompose", "discover")
     graph.add_edge("discover", "reason")
     graph.add_edge("reason", "resolve")
     graph.add_edge("resolve", "assemble")
     graph.add_edge("assemble", "execute")
-    graph.add_edge("execute", END)
+    graph.add_edge("execute", "analyze")
+    graph.add_edge("analyze", END)
     return graph.compile()
