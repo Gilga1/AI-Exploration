@@ -316,6 +316,16 @@ spec:
 
 > **Note:** `depends_on` lists the measures this metric relies on. It must align with `components` refs. Composition edges (`USES_COMPONENT`) come from `components`; `depends_on` provides explicit lineage for validation and audit.
 
+### 3.5 Dimensions — three layers
+
+| Layer | Field | Role |
+|---|---|---|
+| Data source | `schema_fields[].role` | Tags which raw columns are groupable at the source |
+| Measure | `dimension_context.alias` | Assembler instruction: prefix injected columns (e.g. `t.fund_id`) |
+| Metric | `dimensions[]` | Allow-list of breakdowns the Reason step may request |
+
+Measures without `dimension_context` are fixed aggregates — the assembler never injects dimensions into their SQL fragments. When a fragment omits dimension columns, the assembler splices them on demand using the alias and canonical joins (including `latest_snapshot` CTEs for conformed dimensions).
+
 ### 3.4 `entity` — business-glossary layer
 
 ```yaml
@@ -673,8 +683,8 @@ frontend/src/
 
 ## 13. Open Risks
 
-- **Reason-step misidentification** — LLM picks a plausible-but-wrong metric from the candidate list. Mitigation: confidence threshold + a confirmation step in the UI for low-margin candidate scores.
+- **Reason-step misidentification** — Mitigation: confidence threshold pauses the pipeline; Query Console requires explicit metric confirmation before continuing when confidence is low.
 - **Embedding drift** — as the registry grows, description embeddings need periodic re-computation. Needs an owner and a cadence.
 - **Canonical-path conflicts from uncoordinated edits** — two developers each mark a different edge `canonical: true` for the same pair in separate PRs. Mitigation: §6 check 5 catches this at publish time, not silently.
-- **Grain-check completeness** — current design rigorously checks fact-to-fact time/key grain; non-time dimensional grain mismatches (e.g., product-category-level vs. SKU-level) need the same treatment before Phase 2.
+- **Grain-check completeness** — fact-to-fact time/key grain and metric-dimension reachability are validated at publish; continue extending for richer cross-grain scenarios as the registry grows.
 - **Blue-green publish at scale** — fine at 20–50 sources; revisit if the registry grows an order of magnitude.
