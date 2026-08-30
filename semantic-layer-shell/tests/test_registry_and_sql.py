@@ -18,10 +18,11 @@ REGISTRY_DIR = Path(__file__).resolve().parents[1] / "registry"
 
 def test_parse_example_registry():
     staged = parse_registry_directory(REGISTRY_DIR)
-    assert len(staged.documents) >= 6
+    assert len(staged.documents) >= 7
     ids = {d.metadata.id for d in staged.documents}
     assert "net_flow_ratio" in ids
     assert "fct_fund_transactions" in ids
+    assert "fund" in ids
 
 
 def test_validate_example_registry_passes():

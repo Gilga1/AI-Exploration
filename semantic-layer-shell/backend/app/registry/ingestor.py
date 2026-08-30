@@ -6,8 +6,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.graph.neo4j_client import Neo4jClient
+from app.graph.versioning import GraphVersionManager
+from app.registry.graph_validation import derive_metric_depends_on
 from app.registry.models import (
     DataSourceDocument,
+    EntityDocument,
     MeasureDocument,
     MetricDocument,
     RegistryDocument,
@@ -39,7 +42,7 @@ class RegistryIngestor:
 
         statements.append(
             (
-                "CREATE (v:GraphVersion {id: $id, created_at: $created_at, source_ref: $source_ref, published_by: $published_by})",
+                "CREATE (v:GraphVersion {id: $id, created_at: $created_at, source_ref: $source_ref, published_by: $published_by, current: false})",
                 {
                     "id": version_id,
                     "created_at": datetime.now(UTC).isoformat(),
@@ -223,6 +226,47 @@ class RegistryIngestor:
                         },
                     )
                 )
+            for dep in derive_metric_depends_on(doc):
+                ref = dep.get("ref")
+                kind = dep.get("kind", "measure")
+                if not ref:
+                    continue
+                label = "Measure" if kind == "measure" else "Metric"
+                statements.append(
+                    (
+                        f"""
+                        MATCH (parent:Metric {{id: $metric_id}}), (child:{label} {{id: $child_id}})
+                        MERGE (parent)-[:DEPENDS_ON]->(child)
+                        """,
+                        {"metric_id": doc.metadata.id, "child_id": ref},
+                    )
+                )
+
+        elif isinstance(doc, EntityDocument):
+            text = f"{doc.metadata.name} {doc.metadata.description} {' '.join(doc.metadata.synonyms)}"
+            statements.append(
+                (
+                    """
+                    MERGE (e:Entity {id: $id})
+                    SET e += $props
+                    WITH e
+                    MATCH (v:GraphVersion {id: $version_id})
+                    MERGE (e)-[:VERSION_OF]->(v)
+                    """,
+                    {
+                        "id": doc.metadata.id,
+                        "version_id": version_id,
+                        "props": {
+                            "name": doc.metadata.name,
+                            "definition": doc.metadata.description,
+                            "definition_embedding": _embedding_for(text, self.embedding_dimensions),
+                            "synonyms": doc.metadata.synonyms,
+                            "owner": doc.metadata.owner,
+                            "status": doc.metadata.status,
+                        },
+                    },
+                )
+            )
 
         return statements
 
@@ -230,4 +274,5 @@ class RegistryIngestor:
         version_id = f"v-{uuid.uuid4().hex[:12]}"
         statements = self.build_staging_cypher(staged, version_id)
         self.client.run_transaction(statements)
+        GraphVersionManager(self.client).activate_version(version_id)
         return version_id

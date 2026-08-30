@@ -28,15 +28,15 @@ class GraphResolver:
 
     def resolve_metric(self, metric_id: str) -> ResolvedSubgraph | None:
         cypher = """
-        MATCH (m:Metric {id: $metric_id})
+        MATCH (v:GraphVersion {current: true})
+        MATCH (m:Metric {id: $metric_id})-[:VERSION_OF]->(v)
         OPTIONAL MATCH (m)-[uc:USES_COMPONENT]->(comp)
         OPTIONAL MATCH (comp:Measure)-[:DEPENDS_ON]->(ds:DataSource)
         OPTIONAL MATCH (ds)-[j:JOINS_TO]->(target:DataSource)
-        OPTIONAL MATCH (m)-[:VERSION_OF]->(v:GraphVersion)
-        RETURN m, collect(DISTINCT comp) AS components,
+        RETURN m, v.id AS graph_version_id,
+               collect(DISTINCT comp) AS components,
                collect(DISTINCT ds) AS data_sources,
-               collect(DISTINCT {source: ds.id, target: target.id, props: properties(j)}) AS joins,
-               v.id AS graph_version_id
+               collect(DISTINCT {source: ds.id, target: target.id, props: properties(j)}) AS joins
         """
         rows = self.client.run(cypher, {"metric_id": metric_id})
         if rows:

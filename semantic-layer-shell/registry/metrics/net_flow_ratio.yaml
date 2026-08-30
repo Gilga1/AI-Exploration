@@ -29,6 +29,12 @@ spec:
   dimensions: [fund_id, share_class]
   time_key: transaction_date
 
+  depends_on:
+    - kind: measure
+      ref: total_transaction_amount_by_fund_day
+    - kind: measure
+      ref: average_daily_balance_by_fund_day
+
   business_rules:
     - "Excludes test/internal accounts."
     - "Ratio is null when the denominator balance is zero."

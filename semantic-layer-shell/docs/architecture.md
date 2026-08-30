@@ -13,19 +13,24 @@
 
 | Area | Status | Notes |
 |---|---|---|
-| YAML registry parser + validator | Done | `backend/app/registry/` |
+| YAML registry parser + validator | Done | Typed folders under `registry/` |
 | Neo4j ingestor + Docker compose | Done | Auto-bootstrap on startup |
+| Graph version activate + rollback | Done | `ProductionPointer` + `current` flag |
 | OpenAI decompose / reason / answer | Done | Heuristic fallback without API key |
-| Embedding generation on publish | Done | `text-embedding-3-small` |
+| Embedding + vector search | Done | Neo4j vector indexes with keyword fallback |
 | Deterministic SQL assembler | Done | `backend/app/sql_gen/assembler.py` |
+| Exposed-column validation | Done | Publish-time check on measure outputs |
+| Composition + lineage cycle checks | Done | Python validation before publish |
 | Snowflake execution via env | Done | Missing creds → warning, empty rows |
-| NDJSON query stream | Done | `POST /api/v1/query/stream` |
+| NDJSON query stream + selection confidence | Done | Low-confidence UI hint |
+| SQLite audit log | Done | `GET /api/v1/audit/queries` |
 | React UI (Query, DAG, Registry, Admin) | Done | Vite + TypeScript |
 | LangGraph state machine | Done | Alongside streaming pipeline |
 | RBAC (header-based) | Done | `X-User-Role` header |
-| Graph rollback | Stub | Endpoint exists, swap deferred |
-| Audit log persistence | Planned | Phase 2 |
-| Entity glossary layer | Planned | Phase 2 |
+| Graph node PATCH | Done | Metadata edits re-validate + publish |
+| Entity glossary ingest | Done | Sample `entities/fund.yaml` |
+| Real SSO authentication | Planned | Phase 2 |
+| Visual DAG graph layout | Planned | Phase 2 (list view in Phase 1) |
 
 ---
 
@@ -124,7 +129,17 @@ flowchart TB
 
 ## 3. Metadata Registry — YAML Schema
 
-Developers author these files and drop them into a `registry/` directory (or upload via the UI); the backend parses and ingests them. The registry has four **kinds**. Field names are domain-neutral — the examples below use asset-management data purely for illustration.
+Developers author these files under typed folders in `registry/` (or upload via the UI); the backend parses and ingests them to **bootstrap Neo4j** on startup or via `python -m scripts.bootstrap_graph`. The registry has four **kinds**. Field names are domain-neutral — the examples below use asset-management data purely for illustration.
+
+```
+registry/
+  data_sources/    # kind: data_source
+  measures/        # kind: measure  — depends_on → data_source
+  metrics/         # kind: metric   — components + depends_on → measures
+  entities/        # kind: entity   — business glossary (sample in Phase 1)
+```
+
+**Dependency model:** Measures declare `depends_on` data sources. Metrics declare `components` (for `USES_COMPONENT` edges) and should declare matching `depends_on` entries for explicit lineage. If `depends_on` is omitted on a metric, it is derived from `components` at validation time.
 
 ### 3.1 `data_source` — a physical view/table
 
@@ -282,11 +297,17 @@ spec:
   business_rules:
     - "Excludes test/internal accounts."
     - "Ratio is null when the denominator balance is zero."
+
+  depends_on:
+    - kind: measure
+      ref: total_transaction_amount_by_fund_day
+    - kind: measure
+      ref: average_daily_balance_by_fund_day
 ```
 
-### 3.4 `entity` — optional business-glossary layer (Phase 2)
+> **Note:** `depends_on` lists the measures this metric relies on. It must align with `components` refs. Composition edges (`USES_COMPONENT`) come from `components`; `depends_on` provides explicit lineage for validation and audit.
 
-Not needed for Phase 1 given curated, mostly-1:1 marts. Reserved for when the same business concept genuinely spans multiple data sources and needs a canonical definition independent of any one table.
+### 3.4 `entity` — business-glossary layer
 
 ```yaml
 apiVersion: semantic-layer/v1
@@ -296,7 +317,11 @@ metadata:
   name: "Fund"
   description: "A single investment vehicle."
   synonyms: [product, portfolio]
+
+spec: {}
 ```
+
+See `registry/entities/fund.yaml` for the pilot sample. Full `REPRESENTS` edges from columns to entities are Phase 2.
 
 ---
 
@@ -561,6 +586,7 @@ semantic-layer-shell/
 | `GET` | `/health/graph` | Neo4j connectivity + last `GraphVersion` id |
 | `GET` | `/health/warehouse` | Snowflake env config + connection test (`SELECT 1`) |
 | `GET` | `/health/llm` | OpenAI API key configured + model name |
+| `GET` | `/api/v1/audit/queries` | Recent query audit log (admin) |
 
 ---
 

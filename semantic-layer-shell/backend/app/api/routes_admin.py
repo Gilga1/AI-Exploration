@@ -13,6 +13,16 @@ class RoleAssignRequest(BaseModel):
     role: Role
 
 
+@router.get("/audit/queries")
+async def list_audit_queries(
+    limit: int = 50, user: dict = Depends(require_scope("roles"))
+) -> list[dict]:
+    del user
+    from app.audit.store import AuditStore
+
+    return AuditStore().recent(limit=limit)
+
+
 @router.get("/users/me")
 async def get_me(user: dict = Depends(get_current_user)) -> dict:
     return {

@@ -30,7 +30,9 @@ def graph_has_data() -> bool:
     client = get_neo4j_client()
     if not client.connect():
         return False
-    rows = client.run("MATCH (m:Metric) RETURN count(m) AS c")
+    rows = client.run(
+        "MATCH (v:GraphVersion {current: true})<-[:VERSION_OF]-(m:Metric) RETURN count(m) AS c"
+    )
     return bool(rows and rows[0].get("c", 0) > 0)
 
 

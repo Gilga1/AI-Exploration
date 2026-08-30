@@ -1,0 +1,9 @@
+apiVersion: semantic-layer/v1
+kind: entity
+metadata:
+  id: fund
+  name: "Fund"
+  description: "A single investment vehicle offered to investors."
+  synonyms: [product, portfolio]
+
+spec: {}

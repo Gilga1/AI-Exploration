@@ -149,7 +149,24 @@ source backend/.venv/bin/activate
 pytest tests/ -q
 ```
 
-## Daily development workflow
+## Registry bootstrap
+
+YAML files under `registry/` are the **source of truth** for bootstrapping Neo4j:
+
+1. On backend startup (`AUTO_PUBLISH_REGISTRY=true`), if no current graph version exists, all `**/*.yaml` files are parsed, validated, and published.
+2. Manually: `python -m scripts.bootstrap_graph` from `backend/` (use `--force` to re-publish).
+
+Folder layout:
+
+```
+registry/
+  data_sources/   fct_fund_transactions.yaml, dim_fund.yaml, ...
+  measures/       total_transaction_amount_by_fund_day.yaml, ...
+  metrics/        net_flow_ratio.yaml
+  entities/       fund.yaml
+```
+
+See [registry/README.md](../registry/README.md) for the dependency model (`depends_on` vs `components`).
 
 ```bash
 # Terminal 1 — infrastructure

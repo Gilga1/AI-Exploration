@@ -20,6 +20,7 @@ class Metadata(BaseModel):
     owner: str | None = None
     status: Literal["draft", "active", "deprecated"] = "active"
     tags: list[str] = Field(default_factory=list)
+    synonyms: list[str] = Field(default_factory=list)
 
 
 class SchemaField(BaseModel):
@@ -96,6 +97,7 @@ class MetricSpec(BaseModel):
     dimensions: list[str] = Field(default_factory=list)
     time_key: str = ""
     business_rules: list[str] = Field(default_factory=list)
+    depends_on: list[dict[str, str]] = Field(default_factory=list)
 
 
 class MetricDocument(BaseModel):
@@ -109,7 +111,7 @@ class EntityDocument(BaseModel):
     apiVersion: Literal["semantic-layer/v1"]
     kind: Literal["entity"]
     metadata: Metadata
-    synonyms: list[str] = Field(default_factory=list)
+    spec: dict[str, Any] = Field(default_factory=dict)
 
 
 RegistryDocument = DataSourceDocument | MeasureDocument | MetricDocument | EntityDocument

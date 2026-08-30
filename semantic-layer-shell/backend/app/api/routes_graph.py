@@ -5,10 +5,15 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.api.routes_registry import get_staged_registry
 from app.auth.rbac import require_scope
+from app.config.settings import get_settings
 from app.graph.discovery import GraphDiscovery
 from app.graph.neo4j_client import get_neo4j_client
 from app.graph.resolver import GraphResolver
+from app.registry.ingestor import RegistryIngestor
+from app.registry.models import RegistryDocument
+from app.registry.validator import validate_staged_registry
 
 router = APIRouter(prefix="/api/v1/graph", tags=["graph"])
 
@@ -43,9 +48,40 @@ async def patch_node(
     user: dict = Depends(require_scope("graph.write")),
 ) -> dict[str, Any]:
     del user
+    staged = get_staged_registry()
+    updated: RegistryDocument | None = None
+    documents: list[RegistryDocument] = []
+
+    for doc in staged.documents:
+        if doc.metadata.id == node_id:
+            data = doc.model_dump()
+            metadata_updates = {
+                k: v for k, v in patch.properties.items() if k in ("name", "description", "owner", "status", "tags", "synonyms")
+            }
+            data["metadata"].update(metadata_updates)
+            updated = doc.model_validate(data)
+            documents.append(updated)
+        else:
+            documents.append(doc)
+
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Node {node_id!r} not found in staged registry")
+
+    from app.registry.models import StagedRegistry
+
+    new_staged = StagedRegistry(documents=documents, source_files=staged.source_files)
+    validation = validate_staged_registry(new_staged)
+    if not validation.passed:
+        raise HTTPException(status_code=422, detail=validation.model_dump())
+
+    settings = get_settings()
     client = get_neo4j_client()
-    # Phase 1: validate patch intent; full re-validation pipeline on commit deferred
-    return {"id": node_id, "updated": patch.properties, "status": "staged_for_validation"}
+    if client.connect():
+        ingestor = RegistryIngestor(client, settings.embedding_dimensions)
+        version_id = ingestor.publish(new_staged)
+        return {"id": node_id, "updated": patch.properties, "status": "published", "graph_version_id": version_id}
+
+    return {"id": node_id, "updated": patch.properties, "status": "validated", "graph_version_id": None}
 
 
 @router.get("/search")

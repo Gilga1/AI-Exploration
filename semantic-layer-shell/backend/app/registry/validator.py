@@ -13,6 +13,12 @@ from app.registry.models import (
     ValidationResult,
 )
 
+from app.registry.graph_validation import (
+    validate_composition_acyclic,
+    validate_lineage_acyclic,
+    validate_metric_depends_on,
+)
+
 PARAM_PATTERN = re.compile(r"\{\{(\w+)\.(\w+)\}\}")
 
 
@@ -173,6 +179,34 @@ def validate_fact_to_fact_grain(documents: list[RegistryDocument]) -> list[Valid
     return errors
 
 
+def validate_measure_output_exposed(documents: list[RegistryDocument]) -> list[ValidationError]:
+    errors: list[ValidationError] = []
+    index = _index_documents(documents)
+
+    for doc in documents:
+        if not isinstance(doc, MeasureDocument):
+            continue
+        for dep in doc.spec.depends_on:
+            ds = index.get(dep.get("ref", ""))
+            if not isinstance(ds, DataSourceDocument):
+                continue
+            exposed = {f.name for f in ds.spec.schema_fields if f.exposed and not f.pii}
+            schema_names = {f.name for f in ds.spec.schema_fields}
+            for col in doc.spec.output_columns:
+                name = col.get("name")
+                if not name or name not in schema_names:
+                    continue
+                if name not in exposed:
+                    errors.append(
+                        ValidationError(
+                            code="non_exposed_output_column",
+                            message=f"output column {name!r} is not exposed on {ds.metadata.id}",
+                            node_id=doc.metadata.id,
+                        )
+                    )
+    return errors
+
+
 def validate_staged_registry(staged: StagedRegistry) -> ValidationResult:
     documents = staged.documents
     all_errors: list[ValidationError] = []
@@ -182,5 +216,9 @@ def validate_staged_registry(staged: StagedRegistry) -> ValidationResult:
     all_errors.extend(validate_canonical_path_uniqueness(documents))
     all_errors.extend(validate_parameter_enums(documents))
     all_errors.extend(validate_fact_to_fact_grain(documents))
+    all_errors.extend(validate_metric_depends_on(documents))
+    all_errors.extend(validate_composition_acyclic(documents))
+    all_errors.extend(validate_lineage_acyclic(documents))
+    all_errors.extend(validate_measure_output_exposed(documents))
 
     return ValidationResult(passed=len(all_errors) == 0, errors=all_errors)

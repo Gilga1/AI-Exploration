@@ -5,6 +5,7 @@ from typing import Any, AsyncIterator, TypedDict
 
 from langgraph.graph import END, StateGraph
 
+from app.audit.store import AuditStore
 from app.graph.discovery import GraphDiscovery
 from app.graph.neo4j_client import get_neo4j_client
 from app.graph.resolver import GraphResolver
@@ -34,6 +35,7 @@ class QueryPipeline:
         self.assembler = SQLAssembler()
         self.warehouse = SnowflakeClient()
         self.llm = LLMClient()
+        self.audit = AuditStore()
 
     async def run(self, question: str, metric_id: str | None = None) -> AsyncIterator[dict[str, Any]]:
         stages = ["decompose", "discover", "reason", "resolve", "assemble", "execute", "answer"]
@@ -55,6 +57,14 @@ class QueryPipeline:
                     context["selection"] = self.llm.reason(
                         question, context["candidates"], metric_id=metric_id
                     )
+                    sel = context["selection"]
+                    yield {
+                        "event": "selection",
+                        "metric_id": sel.get("metric_id"),
+                        "confidence": sel.get("confidence"),
+                        "rationale": sel.get("rationale"),
+                        "needs_confirmation": (sel.get("confidence") or 1.0) < 0.7,
+                    }
                 elif stage == "resolve":
                     selected_id = context["selection"]["metric_id"]
                     subgraph = self.resolver.resolve_metric(selected_id)
@@ -107,6 +117,22 @@ class QueryPipeline:
                 return
             elapsed = time.perf_counter() - start
             yield {"event": "stage_complete", "stage": stage, "elapsed_sec": round(elapsed, 3)}
+
+        selection = context.get("selection", {})
+        assembled = context.get("assembled")
+        self.audit.log_query(
+            user_id=None,
+            question=question,
+            metric_id=selection.get("metric_id"),
+            graph_version_id=getattr(assembled, "graph_version_id", None),
+            sql_hash=getattr(assembled, "sql_hash", None),
+            sql_text=getattr(assembled, "sql", None),
+            row_count=len(context.get("rows", [])),
+            node_ids=getattr(assembled, "node_ids", None),
+            edge_ids=getattr(assembled, "edge_ids", None),
+            selection_confidence=selection.get("confidence"),
+            extra={"rationale": selection.get("rationale")},
+        )
 
         yield {
             "event": "done",

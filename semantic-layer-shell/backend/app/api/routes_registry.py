@@ -7,9 +7,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from app.auth.rbac import Role, get_current_user, require_scope
+from app.auth.rbac import get_current_user, require_scope
 from app.config.settings import get_settings
 from app.graph.neo4j_client import get_neo4j_client
+from app.graph.versioning import GraphVersionManager
 from app.registry.ingestor import RegistryIngestor
 from app.registry.models import StagedRegistry
 from app.registry.parser import parse_yaml_content
@@ -18,7 +19,6 @@ from app.registry.validator import validate_staged_registry
 router = APIRouter(prefix="/api/v1/registry", tags=["registry"])
 
 _staged_registry = StagedRegistry()
-_published_versions: list[dict[str, Any]] = []
 
 
 class PublishResponse(BaseModel):
@@ -63,6 +63,9 @@ async def validate_registry(user: dict = Depends(require_scope("registry"))) -> 
 @router.post("/publish", response_model=PublishResponse)
 async def publish_registry(user: dict = Depends(require_scope("registry"))) -> PublishResponse:
     del user
+    global _staged_registry
+    if not _staged_registry.documents:
+        load_bundled_registry()
     if not _staged_registry.documents:
         raise HTTPException(status_code=400, detail="No staged registry — upload files first")
 
@@ -75,28 +78,38 @@ async def publish_registry(user: dict = Depends(require_scope("registry"))) -> P
     ingestor = RegistryIngestor(client, settings.embedding_dimensions)
     version_id = ingestor.publish(_staged_registry)
 
-    _published_versions.append(
-        {
-            "id": version_id,
-            "document_count": len(_staged_registry.documents),
-            "source_files": _staged_registry.source_files,
-        }
-    )
-
     return PublishResponse(graph_version_id=version_id, document_count=len(_staged_registry.documents))
 
 
 @router.get("/versions")
 async def list_versions(user: dict = Depends(require_scope("registry"))) -> list[dict[str, Any]]:
     del user
-    return _published_versions
+    client = get_neo4j_client()
+    if client.connect():
+        versions = GraphVersionManager(client).list_versions()
+        if versions:
+            for row in versions:
+                if isinstance(row.get("source_ref"), str):
+                    try:
+                        row["source_ref"] = json.loads(row["source_ref"])
+                    except json.JSONDecodeError:
+                        pass
+            return versions
+    return []
 
 
 @router.post("/rollback/{version_id}")
-async def rollback_version(version_id: str, user: dict = Depends(require_scope("registry.rollback"))) -> dict[str, str]:
+async def rollback_version(
+    version_id: str, user: dict = Depends(require_scope("registry.rollback"))
+) -> dict[str, str]:
     del user
-    # Phase 1: record intent; full blue-green swap deferred
-    return {"status": "rollback_scheduled", "version_id": version_id}
+    client = get_neo4j_client()
+    if not client.connect():
+        raise HTTPException(status_code=503, detail="Neo4j not available")
+    try:
+        return GraphVersionManager(client).rollback(version_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 def load_bundled_registry() -> None:
@@ -108,3 +121,9 @@ def load_bundled_registry() -> None:
     from app.registry.parser import parse_registry_directory
 
     _staged_registry = parse_registry_directory(registry_dir)
+
+
+def get_staged_registry() -> StagedRegistry:
+    if not _staged_registry.documents:
+        load_bundled_registry()
+    return _staged_registry
