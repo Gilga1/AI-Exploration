@@ -8,22 +8,64 @@ Platform-agnostic semantic layer backed by a Neo4j knowledge graph. AI agents se
 
 See [`docs/semantic_layer_shell_architecture.md`](docs/semantic_layer_shell_architecture.md) for the full specification.
 
-## Quick start
+## Quick start (Docker + env)
 
-### Backend
+### 1. One-shot setup
 
 ```bash
-cd semantic-layer-shell/backend
-python -m venv .venv
+cd semantic-layer-shell
+cp .env.example .env          # then edit with your keys
+bash scripts/setup.sh         # starts Neo4j, installs deps, bootstraps graph
+```
+
+### 2. Configure environment
+
+Edit `.env` in `semantic-layer-shell/`:
+
+| Variable | Required | Description |
+|---|---|---|
+| `OPENAI_API_KEY` | Yes (for LLM) | Powers decompose / reason / answer + embeddings |
+| `NEO4J_URI` | Yes | Default `bolt://localhost:7687` (docker compose) |
+| `NEO4J_USER` / `NEO4J_PASSWORD` | Yes | Default `neo4j` / `password` |
+| `SNOWFLAKE_ACCOUNT` | Yes (for execute) | Your Snowflake account identifier |
+| `SNOWFLAKE_USER` / `SNOWFLAKE_PASSWORD` | Yes | Warehouse credentials |
+| `SNOWFLAKE_WAREHOUSE` / `DATABASE` / `SCHEMA` | Yes | Execution context |
+| `SNOWFLAKE_ROLE` | No | Optional role override |
+| `AUTO_PUBLISH_REGISTRY` | No | Default `true` — publishes `registry/` on startup |
+
+### 3. Neo4j (Docker)
+
+```bash
+docker compose up -d neo4j
+# Browser UI: http://localhost:7474  (neo4j / password)
+```
+
+Re-publish registry manually:
+
+```bash
+cd backend && source .venv/bin/activate
+python -m scripts.bootstrap_graph          # skip if graph has data
+python -m scripts.bootstrap_graph --force  # re-publish
+```
+
+### 4. Backend
+
+```bash
+cd backend
 source .venv/bin/activate
-pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-### Frontend
+Health checks:
+- `GET /health` — liveness
+- `GET /health/graph` — Neo4j + last graph version
+- `GET /health/warehouse` — Snowflake connectivity
+- `GET /health/llm` — OpenAI key configured
+
+### 5. Frontend
 
 ```bash
-cd semantic-layer-shell/frontend
+cd frontend
 npm install
 npm run dev
 ```
@@ -34,39 +76,43 @@ Open http://localhost:5173
 
 ```bash
 cd semantic-layer-shell
-pip install -r backend/requirements.txt pytest
+source backend/.venv/bin/activate
 pytest tests/ -q
 ```
+
+## How the services connect
+
+```
+.env  ──►  FastAPI backend
+              ├── OpenAI (decompose, reason, answer, embeddings)
+              ├── Neo4j Docker (graph store + vector search)
+              └── Snowflake (SQL execution)
+```
+
+On startup the backend:
+1. Connects to Neo4j and applies constraints/indexes
+2. Auto-publishes `registry/` YAML if the graph is empty
+3. Logs LLM and Snowflake connection status
 
 ## Project layout
 
 ```
 semantic-layer-shell/
-├── backend/app/          # FastAPI application
-│   ├── api/              # REST routes
-│   ├── registry/         # YAML parser, validator, ingestor
-│   ├── graph/            # Neo4j client, discovery, resolver
-│   ├── agents/           # Query pipeline (LangGraph hook point)
-│   ├── sql_gen/          # Deterministic SQL assembler
-│   └── warehouse/        # Snowflake client
-├── frontend/src/         # React UI
-├── registry/             # Example YAML metadata (pilot domain)
+├── .env.example
+├── docker-compose.yml      # Neo4j
+├── scripts/setup.sh        # One-shot local setup
+├── backend/
+│   ├── app/llm/            # OpenAI client + embeddings
+│   ├── app/bootstrap.py    # Startup graph publish
+│   └── scripts/bootstrap_graph.py
+├── frontend/src/
+├── registry/               # Pilot YAML metadata
 └── tests/
 ```
 
-## Phase 1 scope
+## Phase 1 behavior
 
-- Pipeline: decompose → discover → reason → resolve → assemble → execute → answer
-- Registry upload / validate / publish API
-- DAG explorer with lineage / join / composition layers
-- RBAC headers (`X-User-Role`: viewer | developer | admin)
-- Works offline against bundled `registry/` when Neo4j is unavailable
-
-## Environment variables
-
-| Variable | Description |
-|---|---|
-| `NEO4J_URI` | Neo4j bolt URI (default `bolt://localhost:7687`) |
-| `NEO4J_USER` / `NEO4J_PASSWORD` | Neo4j credentials |
-| `SNOWFLAKE_*` | Snowflake connection (optional for local dev) |
-| `OPENAI_API_KEY` | Optional — future LLM decompose/reason stages |
+- **LLM** handles decompose, reason (constrained to candidates), and answer narration
+- **SQL** is always assembled deterministically in Python — the LLM never authors JOINs or aggregations
+- **Snowflake** executes assembled SQL; if env vars are missing, execute returns empty rows with a warning
+- **Neo4j** is required for production graph storage; file-based fallback exists for offline dev

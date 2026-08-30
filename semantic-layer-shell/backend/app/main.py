@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -9,24 +10,43 @@ from app.api.routes_admin import router as admin_router
 from app.api.routes_graph import router as graph_router
 from app.api.routes_query import router as query_router
 from app.api.routes_registry import load_bundled_registry, router as registry_router
+from app.bootstrap import bootstrap_registry, ensure_graph_schema
 from app.config.settings import get_settings
 from app.graph.neo4j_client import get_neo4j_client
-from app.graph.schema import CONSTRAINTS_AND_INDEXES
+from app.llm.client import LLMClient
 from app.warehouse.snowflake_client import SnowflakeClient
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings = get_settings()
     load_bundled_registry()
-    client = get_neo4j_client()
-    if client.connect():
-        for stmt in CONSTRAINTS_AND_INDEXES:
-            try:
-                client.run(stmt)
-            except Exception:
-                pass
+
+    if ensure_graph_schema():
+        version_id = bootstrap_registry()
+        if version_id:
+            logger.info("Bootstrapped graph version: %s", version_id)
+
+    llm = LLMClient()
+    if llm.enabled:
+        logger.info("LLM enabled (model=%s)", settings.openai_model)
+    else:
+        logger.warning("OPENAI_API_KEY not set — using heuristic decompose/reason/answer")
+
+    sf = SnowflakeClient()
+    if sf.is_configured:
+        if sf.connect():
+            logger.info("Snowflake connected")
+        else:
+            logger.warning("Snowflake configured but connection failed: %s", sf.last_error)
+    else:
+        logger.warning("Snowflake env vars not set — execute stage will return empty rows")
+
     yield
-    client.close()
+
+    get_neo4j_client().close()
 
 
 def create_app() -> FastAPI:
@@ -54,13 +74,42 @@ def create_app() -> FastAPI:
     async def health_graph() -> dict:
         client = get_neo4j_client()
         connected = client.connect()
-        return {"status": "ok" if connected else "degraded", "neo4j_connected": connected}
+        body: dict = {
+            "status": "ok" if connected else "degraded",
+            "neo4j_connected": connected,
+        }
+        if not connected and client.last_error:
+            body["error"] = client.last_error
+        if connected:
+            rows = client.run(
+                "MATCH (v:GraphVersion) RETURN v.id AS id ORDER BY v.created_at DESC LIMIT 1"
+            )
+            if rows:
+                body["last_graph_version_id"] = rows[0].get("id")
+        return body
 
     @app.get("/health/warehouse")
     async def health_warehouse() -> dict:
         sf = SnowflakeClient()
-        connected = sf.connect()
-        return {"status": "ok" if connected else "degraded", "snowflake_connected": connected}
+        configured = sf.is_configured
+        connected = sf.connect() if configured else False
+        body: dict = {
+            "status": "ok" if connected else ("not_configured" if not configured else "degraded"),
+            "snowflake_configured": configured,
+            "snowflake_connected": connected,
+        }
+        if sf.last_error:
+            body["error"] = sf.last_error
+        return body
+
+    @app.get("/health/llm")
+    async def health_llm() -> dict:
+        llm = LLMClient()
+        return {
+            "status": "ok" if llm.enabled else "not_configured",
+            "llm_enabled": llm.enabled,
+            "model": settings.openai_model if llm.enabled else None,
+        }
 
     return app
 

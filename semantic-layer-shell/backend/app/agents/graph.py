@@ -1,9 +1,5 @@
-"""LangGraph pipeline entry point — Phase 1 uses QueryPipeline directly.
+"""LangGraph pipeline entry point."""
 
-This module is reserved for LangGraph state-machine wiring as the agent
-orchestration matures beyond the heuristic Phase 1 implementation.
-"""
+from app.agents.nodes import QueryPipeline, build_langgraph_pipeline
 
-from app.agents.nodes import QueryPipeline
-
-__all__ = ["QueryPipeline"]
+__all__ = ["QueryPipeline", "build_langgraph_pipeline"]

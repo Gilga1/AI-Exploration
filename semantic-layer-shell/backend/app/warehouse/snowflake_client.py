@@ -8,39 +8,80 @@ from app.config.settings import get_settings
 class SnowflakeClient:
     def __init__(self) -> None:
         self.settings = get_settings()
-        self._connected = False
+        self._last_error: str | None = None
+
+    def _missing_config(self) -> list[str]:
+        required = {
+            "SNOWFLAKE_ACCOUNT": self.settings.snowflake_account,
+            "SNOWFLAKE_USER": self.settings.snowflake_user,
+            "SNOWFLAKE_PASSWORD": self.settings.snowflake_password,
+            "SNOWFLAKE_WAREHOUSE": self.settings.snowflake_warehouse,
+            "SNOWFLAKE_DATABASE": self.settings.snowflake_database,
+            "SNOWFLAKE_SCHEMA": self.settings.snowflake_schema,
+        }
+        return [k for k, v in required.items() if not v]
 
     def connect(self) -> bool:
-        if not self.settings.snowflake_account:
+        missing = self._missing_config()
+        if missing:
+            self._last_error = f"Missing env vars: {', '.join(missing)}"
             return False
         try:
-            import snowflake.connector  # noqa: F401
+            import snowflake.connector
 
-            self._connected = True
+            conn_kwargs: dict[str, Any] = {
+                "account": self.settings.snowflake_account,
+                "user": self.settings.snowflake_user,
+                "password": self.settings.snowflake_password,
+                "warehouse": self.settings.snowflake_warehouse,
+                "database": self.settings.snowflake_database,
+                "schema": self.settings.snowflake_schema,
+            }
+            if self.settings.snowflake_role:
+                conn_kwargs["role"] = self.settings.snowflake_role
+
+            conn = snowflake.connector.connect(**conn_kwargs)
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
+            finally:
+                conn.close()
+            self._last_error = None
             return True
-        except Exception:
-            self._connected = False
+        except Exception as exc:
+            self._last_error = str(exc)
             return False
 
     @property
-    def is_connected(self) -> bool:
-        return self._connected
+    def is_configured(self) -> bool:
+        return not self._missing_config()
+
+    @property
+    def last_error(self) -> str | None:
+        return self._last_error
 
     def execute(self, sql: str) -> tuple[list[dict[str, Any]], list[str]]:
-        if not self.connect():
-            # Dev mock: return empty result set with SQL echoed in logs
-            return [], []
+        missing = self._missing_config()
+        if missing:
+            raise RuntimeError(
+                f"Snowflake not configured. Set env vars: {', '.join(missing)}"
+            )
 
         import snowflake.connector
 
-        conn = snowflake.connector.connect(
-            account=self.settings.snowflake_account,
-            user=self.settings.snowflake_user,
-            password=self.settings.snowflake_password,
-            warehouse=self.settings.snowflake_warehouse,
-            database=self.settings.snowflake_database,
-            schema=self.settings.snowflake_schema,
-        )
+        conn_kwargs: dict[str, Any] = {
+            "account": self.settings.snowflake_account,
+            "user": self.settings.snowflake_user,
+            "password": self.settings.snowflake_password,
+            "warehouse": self.settings.snowflake_warehouse,
+            "database": self.settings.snowflake_database,
+            "schema": self.settings.snowflake_schema,
+        }
+        if self.settings.snowflake_role:
+            conn_kwargs["role"] = self.settings.snowflake_role
+
+        conn = snowflake.connector.connect(**conn_kwargs)
         try:
             cursor = conn.cursor()
             cursor.execute(sql)

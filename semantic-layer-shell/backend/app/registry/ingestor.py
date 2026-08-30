@@ -15,8 +15,18 @@ from app.registry.models import (
 )
 
 
-def _zero_embedding(dimensions: int = 1536) -> list[float]:
-    return [0.0] * dimensions
+from app.llm.embeddings import EmbeddingClient
+
+
+def _embedding_for(text: str, dimensions: int) -> list[float]:
+    client = EmbeddingClient()
+    vector = client.embed(text)
+    if len(vector) == dimensions:
+        return vector
+    # Pad or truncate if provider returns unexpected size
+    if len(vector) > dimensions:
+        return vector[:dimensions]
+    return vector + [0.0] * (dimensions - len(vector))
 
 
 class RegistryIngestor:
@@ -65,7 +75,7 @@ class RegistryIngestor:
                         "props": {
                             "name": doc.metadata.name,
                             "description": doc.metadata.description,
-                            "description_embedding": _zero_embedding(self.embedding_dimensions),
+                            "description_embedding": _embedding_for(doc.metadata.description, self.embedding_dimensions),
                             "owner": doc.metadata.owner,
                             "status": doc.metadata.status,
                             "type": doc.spec.type,
@@ -140,7 +150,7 @@ class RegistryIngestor:
                         "props": {
                             "name": doc.metadata.name,
                             "description": doc.metadata.description,
-                            "description_embedding": _zero_embedding(self.embedding_dimensions),
+                            "description_embedding": _embedding_for(doc.metadata.description, self.embedding_dimensions),
                             "parameters": json.dumps(doc.spec.parameters),
                             "time_filter": json.dumps(doc.spec.time_filter),
                             "dimension_context": json.dumps(doc.spec.dimension_context),
@@ -181,7 +191,7 @@ class RegistryIngestor:
                         "props": {
                             "name": doc.metadata.name,
                             "description": doc.metadata.description,
-                            "description_embedding": _zero_embedding(self.embedding_dimensions),
+                            "description_embedding": _embedding_for(doc.metadata.description, self.embedding_dimensions),
                             "metric_type": doc.spec.metric_type,
                             "formula": doc.spec.formula,
                             "unit": doc.spec.unit,
