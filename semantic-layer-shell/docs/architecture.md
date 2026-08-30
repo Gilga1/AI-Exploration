@@ -1,9 +1,31 @@
-# Semantic Layer Shell — Architecture Specification
+# Semantic Layer Shell — Architecture
 ### Pilot: Intelligence Hub
 
-**Status:** Draft v0.1
+**Status:** Phase 1 implemented (branch `cursor/semantic-layer-shell`)
 **Owner:** Shobhit Tiwari
 **Purpose:** A platform-agnostic semantic layer, backed by a Neo4j knowledge graph, that lets AI agents generate deterministic, idempotent SQL against a warehouse (initially Snowflake) without hardcoding to specific views. Business context, metric definitions, and join paths are supplied as data (YAML/Markdown), not code, so the platform is domain-agnostic — this document uses fund/transaction examples for concreteness, but the schema imposes no domain assumptions.
+
+**Related docs:** [Setup guide](setup.md) · [Project README](../README.md)
+
+---
+
+## Implementation status (Phase 1)
+
+| Area | Status | Notes |
+|---|---|---|
+| YAML registry parser + validator | Done | `backend/app/registry/` |
+| Neo4j ingestor + Docker compose | Done | Auto-bootstrap on startup |
+| OpenAI decompose / reason / answer | Done | Heuristic fallback without API key |
+| Embedding generation on publish | Done | `text-embedding-3-small` |
+| Deterministic SQL assembler | Done | `backend/app/sql_gen/assembler.py` |
+| Snowflake execution via env | Done | Missing creds → warning, empty rows |
+| NDJSON query stream | Done | `POST /api/v1/query/stream` |
+| React UI (Query, DAG, Registry, Admin) | Done | Vite + TypeScript |
+| LangGraph state machine | Done | Alongside streaming pipeline |
+| RBAC (header-based) | Done | `X-User-Role` header |
+| Graph rollback | Stub | Endpoint exists, swap deferred |
+| Audit log persistence | Planned | Phase 2 |
+| Entity glossary layer | Planned | Phase 2 |
 
 ---
 
@@ -437,33 +459,43 @@ Both cycle checks run natively in Cypher — no separate graph library needed fo
 
 ```
 semantic-layer-shell/
+├── .env.example
+├── docker-compose.yml                 # Neo4j 5.26
+├── scripts/setup.sh                   # one-shot local setup
+├── registry/                          # pilot YAML metadata
 ├── backend/
+│   ├── requirements.txt
+│   ├── scripts/bootstrap_graph.py     # CLI: publish registry → Neo4j
 │   └── app/
-│       ├── main.py
-│       ├── config/
-│       │   └── settings.py
+│       ├── main.py                    # FastAPI + lifespan bootstrap
+│       ├── bootstrap.py               # schema + auto-publish on startup
+│       ├── config/settings.py         # env-driven settings (.env)
 │       ├── api/
 │       │   ├── routes_registry.py     # upload / validate / publish / rollback
 │       │   ├── routes_graph.py        # explore / search / edit
 │       │   ├── routes_query.py        # NL query + SQL preview/execute
 │       │   └── routes_admin.py        # RBAC
 │       ├── registry/
-│       │   ├── parser.py              # YAML/Markdown -> Pydantic models
+│       │   ├── models.py              # Pydantic document types
+│       │   ├── parser.py              # YAML → typed objects
 │       │   ├── validator.py           # §6 checks
-│       │   └── ingestor.py            # staging graph build + blue-green publish
+│       │   └── ingestor.py            # Neo4j publish + embeddings
 │       ├── graph/
 │       │   ├── neo4j_client.py
-│       │   ├── schema.py              # constraint/index definitions
-│       │   ├── discovery.py           # vector search (Reason step, stage 2 of §5)
-│       │   └── resolver.py            # exact-match fetch + hydrate to Pydantic
+│       │   ├── schema.py              # constraints + vector indexes
+│       │   ├── discovery.py           # vector / keyword search
+│       │   └── resolver.py            # exact-match subgraph fetch
+│       ├── llm/
+│       │   ├── client.py              # OpenAI decompose / reason / answer
+│       │   └── embeddings.py          # OpenAI embeddings on publish
 │       ├── agents/
-│       │   ├── graph.py               # LangGraph pipeline (§5)
-│       │   ├── nodes.py               # decompose / reason / resolve / assemble / execute / answer
-│       │   └── streaming.py           # NDJSON event wrapper
+│       │   ├── graph.py               # LangGraph StateGraph
+│       │   ├── nodes.py               # QueryPipeline (streaming)
+│       │   └── streaming.py           # NDJSON wrapper
 │       ├── sql_gen/
-│       │   └── assembler.py           # pure Python, deterministic (§1, principle 1)
+│       │   └── assembler.py           # pure Python, deterministic
 │       ├── warehouse/
-│       │   └── snowflake_client.py    # pluggable interface — Snowflake today
+│       │   └── snowflake_client.py    # Snowflake via env vars
 │       └── auth/
 │           └── rbac.py
 └── frontend/  (see §9)
@@ -526,8 +558,9 @@ semantic-layer-shell/
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/health` | Liveness |
-| `GET` | `/health/graph` | Neo4j connectivity + last successful publish timestamp |
-| `GET` | `/health/warehouse` | Snowflake connectivity |
+| `GET` | `/health/graph` | Neo4j connectivity + last `GraphVersion` id |
+| `GET` | `/health/warehouse` | Snowflake env config + connection test (`SELECT 1`) |
+| `GET` | `/health/llm` | OpenAI API key configured + model name |
 
 ---
 
@@ -579,11 +612,14 @@ frontend/src/
 
 ## 12. Phased Roadmap
 
-**Phase 1 — Intelligence Hub pilot**
-- Pipeline: decompose → reason → resolve → assemble → execute → answer.
-- Curated marts only; single canonical join path assumption (per your current schema); no cross-source `Entity` layer.
-- RBAC: Viewer + Developer only.
-- Manual YAML authoring.
+**Phase 1 — Intelligence Hub pilot** *(current)*
+- Pipeline: decompose → discover → reason → resolve → assemble → execute → answer.
+- OpenAI for decompose / reason / answer; embeddings on registry publish.
+- Neo4j via Docker; auto-bootstrap of bundled `registry/` YAML.
+- Snowflake execution via environment variables.
+- Curated marts only; single canonical join path assumption; no cross-source `Entity` layer.
+- RBAC: Viewer, Developer, Admin (header-based pilot auth).
+- Manual YAML authoring + UI upload.
 
 **Phase 2**
 - Add statistical-analysis, insights, visualization, revision, and explorer stages (borrowed from the reference LangGraph pipeline).
