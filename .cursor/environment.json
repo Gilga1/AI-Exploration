@@ -1,9 +1,9 @@
 {
-  "name": "Qwen Agentic FT",
+  "name": "Semantic Layer Shell",
   "user": "ubuntu",
   "build": {
     "dockerfile": "Dockerfile",
     "context": "."
   },
-  "install": "bash scripts/setup_env.sh"
+  "install": "cd semantic-layer-shell && bash scripts/setup.sh"
 }
