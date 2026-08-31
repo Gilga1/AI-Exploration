@@ -7,14 +7,13 @@ from langgraph.graph import END, StateGraph
 
 from app.agents.analysis import analyze_rows
 from app.agents.explorer import MetricExplorer
-from app.agents.insights import generate_insights
+from app.agents.insights import build_result_package, run_post_sql_agents
 from app.agents.dimension_selection import enrich_candidates_with_metric_fields
 from app.agents.revision import apply_revision
 from app.agents.entity_resolution import EntityResolver, build_mentions_from_intent
 from app.agents.time_resolution import resolve_time_range
 from app.graph.entity_catalog import load_data_sources_for_catalog, load_entity_catalog
 from app.config.settings import get_settings
-from app.agents.visualization import build_chart_spec
 from app.audit.store import AuditStore
 from app.cache.query_cache import QueryResultCache
 from app.graph.discovery import GraphDiscovery
@@ -22,7 +21,11 @@ from app.graph.neo4j_client import get_neo4j_client
 from app.graph.resolver import GraphResolver
 from app.llm.client import LLMClient
 from app.sql_gen.assembler import SQLAssembler
+from app.sql_gen.result_limit import append_result_limit
 from app.warehouse.snowflake_client import SnowflakeClient
+from pathlib import Path
+
+from app.registry.parser import parse_registry_directory
 
 
 class PipelineState(TypedDict, total=False):
@@ -59,6 +62,7 @@ class QueryPipeline:
         question: str,
         metric_id: str | None = None,
         revision_hint: str | None = None,
+        disambiguation: dict[str, Any] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         stages = [
             "decompose",
@@ -70,14 +74,14 @@ class QueryPipeline:
             "assemble",
             "execute",
             "analyze",
-            "insights",
-            "visualization",
+            "post_sql",
             "explorer",
             "answer",
         ]
         context: dict[str, Any] = {
             "question": question,
             "revision_hint": revision_hint,
+            "disambiguation": disambiguation,
             "entity_catalog": load_entity_catalog(self.client),
         }
 
@@ -139,7 +143,10 @@ class QueryPipeline:
                         }
                         return
                 elif stage == "resolve_entities":
-                    mentions = build_mentions_from_intent(context.get("intent", {}))
+                    mentions = build_mentions_from_intent(
+                        context.get("intent", {}),
+                        context.get("selection"),
+                    )
                     resolution_sources = load_data_sources_for_catalog(
                         context.get("entity_catalog", []), self.client
                     )
@@ -147,6 +154,8 @@ class QueryPipeline:
                         mentions,
                         context.get("entity_catalog", []),
                         resolution_sources,
+                        joins=self._load_registry_joins(),
+                        disambiguation=disambiguation,
                     )
                     context["entity_resolution"] = entity_result.to_dict()
                     ambiguous = [
@@ -200,10 +209,12 @@ class QueryPipeline:
                         "global_filters_applied": assembled.provenance.get(
                             "global_filters_applied", []
                         ),
+                        "resolution_sql": entity_resolution.get("resolution_sql", []),
                     }
                 elif stage == "execute":
                     assembled = context["assembled"]
                     selection = context["selection"]
+                    entity_resolution = context.get("entity_resolution", {})
                     cache_key = QueryResultCache.make_key(
                         graph_version_id=assembled.graph_version_id,
                         node_ids=assembled.node_ids,
@@ -211,15 +222,18 @@ class QueryPipeline:
                         parameters=selection.get("parameters"),
                         dimensions=selection.get("dimensions"),
                         sql_hash=assembled.sql_hash,
+                        entity_filters=entity_resolution.get("filters", []),
+                        resolved_time=context.get("resolved_time"),
                     )
                     context["cache_key"] = cache_key
                     cached = self.cache.get(cache_key)
+                    exec_sql = append_result_limit(assembled.sql)
                     if cached:
                         rows, columns = cached
                         yield {"event": "cache_hit", "cache_key": cache_key}
                     else:
                         try:
-                            rows, columns = self.warehouse.execute(assembled.sql)
+                            rows, columns = self.warehouse.execute(exec_sql)
                         except RuntimeError as exc:
                             if not self.warehouse.is_configured:
                                 rows, columns = [], []
@@ -228,40 +242,72 @@ class QueryPipeline:
                                 raise
                         if rows:
                             self.cache.set(cache_key, rows, columns)
+                    max_rows = get_settings().max_result_rows
                     context["rows"] = rows
                     context["columns"] = columns
-                    yield {"event": "data_rows", "rows": rows, "columns": columns}
+                    yield {
+                        "event": "data_rows",
+                        "rows": rows,
+                        "columns": columns,
+                        "row_count": len(rows),
+                        "truncated": len(rows) >= max_rows,
+                    }
                 elif stage == "analyze":
                     context["analysis"] = analyze_rows(
                         context.get("rows", []), context.get("columns", [])
                     )
                     yield {"event": "analysis", "analysis": context["analysis"]}
-                elif stage == "insights":
-                    text = generate_insights(
-                        self.llm,
-                        question,
-                        context["selection"]["metric_id"],
-                        context.get("analysis", {}),
-                        context.get("rows", []),
+                elif stage == "post_sql":
+                    assembled = context.get("assembled")
+                    metric = context["selection"]["metric_id"]
+                    subgraph = context.get("subgraph")
+                    business_rules: list[str] = []
+                    if subgraph:
+                        metric_spec = subgraph.metric.get("spec", subgraph.metric)
+                        business_rules = list(metric_spec.get("business_rules", []))
+                    result_package = build_result_package(
+                        question=question,
+                        metric_id=metric,
+                        rows=context.get("rows", []),
+                        columns=context.get("columns", []),
+                        analysis=context.get("analysis", {}),
+                        provenance={
+                            "metric_id": metric,
+                            "graph_version_id": getattr(assembled, "graph_version_id", None),
+                            "sql_hash": getattr(assembled, "sql_hash", None),
+                            "filters_applied": context.get("entity_resolution", {}).get("filters", []),
+                            "time_range_applied": context.get("resolved_time"),
+                            "global_filters_applied": getattr(assembled, "provenance", {}).get(
+                                "global_filters_applied", []
+                            ),
+                            "entity_resolutions": context.get("entity_resolution", {}).get(
+                                "resolutions", []
+                            ),
+                        },
+                        business_rules=business_rules,
                     )
-                    context["insights"] = text
-                    yield {"event": "insights", "delta": text}
-                elif stage == "visualization":
-                    chart = build_chart_spec(
-                        context.get("rows", []),
-                        context.get("columns", []),
-                        context["selection"]["metric_id"],
+                    insights_payload, viz_payload = run_post_sql_agents(
+                        self.llm, result_package, metric
                     )
-                    context["chart"] = chart
-                    if chart:
-                        yield {"event": "visualization", "chart": chart}
+                    context["insights"] = insights_payload
+                    context["chart"] = viz_payload
+                    yield {
+                        "event": "insights",
+                        "headline": insights_payload.get("headline", ""),
+                        "insights": insights_payload.get("insights", []),
+                        "follow_ups": insights_payload.get("follow_ups", []),
+                        "delta": insights_payload.get("headline", ""),
+                    }
+                    if viz_payload:
+                        yield {"event": "visualization", "chart": viz_payload}
                 elif stage == "explorer":
                     related = self.explorer.related_metrics(context["selection"]["metric_id"])
                     context["related_metrics"] = related
                     yield {"event": "explorer", "related_metrics": related}
                 elif stage == "answer":
                     assembled = context.get("assembled")
-                    insights = context.get("insights", "")
+                    insights = context.get("insights", {})
+                    headline = insights.get("headline", "") if isinstance(insights, dict) else str(insights)
                     answer = self.llm.answer(
                         question=question,
                         metric_id=context["selection"]["metric_id"],
@@ -269,8 +315,8 @@ class QueryPipeline:
                         columns=context.get("columns", []),
                         sql=getattr(assembled, "sql", None),
                     )
-                    if insights and insights not in answer:
-                        answer = f"{answer}\n\n{insights}"
+                    if headline and headline not in answer:
+                        answer = f"{answer}\n\n{headline}"
                     yield {"event": "token", "stage": "answer", "delta": answer}
             except Exception as exc:
                 yield {"event": "error", "stage": stage, "error": str(exc)}
@@ -318,6 +364,28 @@ class QueryPipeline:
                 seen.add(cid)
                 deduped.append(c)
         return deduped
+
+    def _load_registry_joins(self) -> list[dict[str, Any]]:
+        registry_dir = Path(__file__).resolve().parents[3] / "registry"
+        if not registry_dir.exists():
+            return []
+        staged = parse_registry_directory(registry_dir)
+        joins: list[dict[str, Any]] = []
+        for doc in staged.documents:
+            if doc.kind != "data_source":
+                continue
+            for join in doc.spec.joins:  # type: ignore[union-attr]
+                joins.append(
+                    {
+                        "source": doc.metadata.id,
+                        "target": join.target,
+                        "on": join.on,
+                        "type": join.type,
+                        "canonical": join.canonical,
+                        "strategy": join.strategy,
+                    }
+                )
+        return joins
 
 
 def build_langgraph_pipeline() -> Any:

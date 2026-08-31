@@ -4,6 +4,8 @@ import { Timeline } from "./Timeline";
 import { SqlPreview } from "./SqlPreview";
 import { ResultsPanel } from "./ResultsPanel";
 import { InsightsPanel } from "./InsightsPanel";
+import { ChartPanel } from "./ChartPanel";
+import { EntityResolutionPanel } from "./EntityResolutionPanel";
 import { StreamEvent } from "../../services/api";
 
 function ConfirmationPanel({
@@ -51,12 +53,56 @@ function ConfirmationPanel({
   );
 }
 
+function DisambiguationPanel({
+  event,
+  onSelect,
+  loading,
+}: {
+  event: StreamEvent;
+  onSelect: (entityType: string, key: string, label: string) => void;
+  loading: boolean;
+}) {
+  const entityType = String(event.entity_type || "");
+  const candidates = (event.candidates as Array<Record<string, unknown>>) || [];
+
+  return (
+    <div
+      style={{
+        marginTop: "1rem",
+        padding: "0.75rem",
+        background: "#eff6ff",
+        borderRadius: "0.5rem",
+        border: "1px solid #3b82f6",
+      }}
+    >
+      <strong>Choose {entityType || "entity"}</strong>
+      <p style={{ margin: "0.5rem 0" }}>Multiple matches found — pick the correct one to continue.</p>
+      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+        {candidates.map((candidate, idx) => {
+          const key = String(candidate.resolved_key ?? candidate.RESOLVED_KEY ?? idx);
+          const label = String(candidate.resolved_label ?? candidate.RESOLVED_LABEL ?? key);
+          return (
+            <button
+              key={`${entityType}-${key}-${idx}`}
+              disabled={loading}
+              onClick={() => onSelect(entityType, key, label)}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function QueryConsole() {
-  const { events, loading, error, runQuery } = useSemanticQuery();
+  const { events, loading, error, runQuery, resumeWithDisambiguation } = useSemanticQuery();
   const [question, setQuestion] = useState("What is the net flow ratio by fund?");
   const [revisionHint, setRevisionHint] = useState("");
 
   const confirmationEvent = events.find((e) => e.event === "confirmation_required");
+  const disambiguationEvent = events.find((e) => e.event === "disambiguation_required");
 
   return (
     <div className="panel">
@@ -85,10 +131,25 @@ export function QueryConsole() {
           onConfirm={(metricId) => runQuery(question, metricId, revisionHint || undefined)}
         />
       )}
+      {disambiguationEvent && (
+        <DisambiguationPanel
+          event={disambiguationEvent}
+          loading={loading}
+          onSelect={(entityType, key, label) =>
+            resumeWithDisambiguation({
+              entity_type: entityType,
+              selected_key: key,
+              selected_label: label,
+            })
+          }
+        />
+      )}
       <Timeline events={events} />
+      <EntityResolutionPanel events={events} />
       <SqlPreview events={events} />
       <ResultsPanel events={events} />
       <InsightsPanel events={events} />
+      <ChartPanel events={events} />
     </div>
   );
 }

@@ -150,7 +150,7 @@ class SQLAssembler:
                 for f in ds_index.get(primary_id, {}).get("schema_fields", [])
             }
             for ef in entity_filters:
-                column = ef.get("column")
+                column = ef.get("targets", {}).get(primary_id) or ef.get("column")
                 if column and column in schema_columns:
                     predicates.append(
                         entity_filter_to_sql(

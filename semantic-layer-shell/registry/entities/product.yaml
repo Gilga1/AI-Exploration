@@ -4,7 +4,7 @@ metadata:
   id: product
   name: "Product"
   description: "Product / fund name (pilot maps to dim_fund)."
-  synonyms: [fund]
+  synonyms: [fund, portfolio]
 
 spec:
   resolves_via:
@@ -13,3 +13,9 @@ spec:
     key_column: fund_id
     match: ilike
     limit: 10
+    strategy: latest_snapshot
+  filter_targets:
+    - data_source: fct_fund_transactions
+      column: fund_id
+    - data_source: fct_daily_fund_balances
+      column: fund_id

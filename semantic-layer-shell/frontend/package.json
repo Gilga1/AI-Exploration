@@ -11,7 +11,10 @@
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "@xyflow/react": "^12.3.6"
+    "@xyflow/react": "^12.3.6",
+    "react-vega": "^7.6.0",
+    "vega": "^5.30.0",
+    "vega-lite": "^5.21.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",

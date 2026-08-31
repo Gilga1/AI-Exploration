@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     # Reason step — pipeline pauses below this confidence until user confirms metric
     reason_confidence_threshold: float = 0.7
 
+    # Query execution
+    max_result_rows: int = 1000
+
 
 @lru_cache
 def get_settings() -> Settings:

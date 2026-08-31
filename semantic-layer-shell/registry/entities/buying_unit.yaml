@@ -1,0 +1,9 @@
+apiVersion: semantic-layer/v1
+kind: entity
+metadata:
+  id: buying_unit
+  name: "Buying Unit"
+  description: "Internal sales territory or buying unit."
+  synonyms: [bu, region, territory]
+
+spec: {}

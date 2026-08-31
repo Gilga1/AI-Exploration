@@ -1,0 +1,13 @@
+apiVersion: semantic-layer/v1
+kind: entity
+metadata:
+  id: asset_class
+  name: "Asset Class"
+  description: "Broad asset class grouping."
+  synonyms: [equity, fixed income, multi-asset]
+
+spec:
+  attributes:
+    - id: asset_class_name
+      description: "Asset class labels"
+      values: [Equity, "Multi-Asset", "Fixed Income", Growth]

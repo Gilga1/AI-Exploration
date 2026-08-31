@@ -10,12 +10,14 @@ async def stream_query_events(
     question: str,
     metric_id: str | None = None,
     revision_hint: str | None = None,
+    disambiguation: dict[str, Any] | None = None,
 ) -> AsyncIterator[str]:
     pipeline = QueryPipeline()
     async for event in pipeline.run(
         question=question,
         metric_id=metric_id,
         revision_hint=revision_hint,
+        disambiguation=disambiguation,
     ):
         yield json.dumps(event) + "\n"
 

@@ -131,6 +131,7 @@ class ResolvesVia(BaseModel):
     key_column: str
     match: Literal["exact", "ilike", "prefix"] = "ilike"
     limit: int = 10
+    strategy: Literal["full_history", "latest_snapshot"] = "full_history"
 
 
 class FilterTarget(BaseModel):

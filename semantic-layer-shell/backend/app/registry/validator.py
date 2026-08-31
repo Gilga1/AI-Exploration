@@ -14,6 +14,7 @@ from app.registry.models import (
 )
 
 from app.registry.entity_validation import validate_entity_specs
+from app.registry.global_filters_lint import validate_duplicate_global_filters
 from app.registry.global_filters_validation import validate_global_filters
 from app.registry.dimension_validation import (
     validate_compositional_dimension_grain,
@@ -292,4 +293,5 @@ def validate_staged_registry(staged: StagedRegistry) -> ValidationResult:
     all_errors.extend(validate_metric_dimensions(documents))
     all_errors.extend(validate_compositional_dimension_grain(documents))
 
-    return ValidationResult(passed=len(all_errors) == 0, errors=all_errors)
+    warnings = validate_duplicate_global_filters(documents)
+    return ValidationResult(passed=len(all_errors) == 0, errors=all_errors, warnings=warnings)

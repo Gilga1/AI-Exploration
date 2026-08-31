@@ -53,12 +53,10 @@ def test_assembler_injects_fund_id_when_requested(subgraph):
     assert with_fund.sql != without.sql
 
 
-def test_assembler_injects_share_class_with_dim_fund_join(subgraph):
+def test_assembler_injects_share_class_on_fact_column(subgraph):
     assembler = SQLAssembler()
     assembled = assembler.assemble(subgraph, parameters={"basis": "net"}, dimensions=["share_class"])
-    assert "dim_fund.share_class" in assembled.sql
-    assert "dim_fund_latest" in assembled.sql
-    assert "LEFT JOIN dim_fund_latest dim_fund" in assembled.sql
+    assert "t.share_class" in assembled.sql
 
 
 def test_assembler_rejects_disallowed_dimension(subgraph):

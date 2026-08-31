@@ -50,4 +50,15 @@ def validate_entity_specs(documents: list[RegistryDocument]) -> list[ValidationE
                         node_id=doc.metadata.id,
                     )
                 )
+                continue
+            ds = next(d for d in documents if d.metadata.id == target.data_source)
+            columns = {f.name for f in ds.spec.schema_fields}  # type: ignore[union-attr]
+            if target.column not in columns:
+                errors.append(
+                    ValidationError(
+                        code="entity_filter_target_missing_column",
+                        message=f"filter_targets column {target.column!r} not on {target.data_source}",
+                        node_id=doc.metadata.id,
+                    )
+                )
     return errors

@@ -1,0 +1,13 @@
+apiVersion: semantic-layer/v1
+kind: entity
+metadata:
+  id: morningstar_category
+  name: "Morningstar Category"
+  description: "Morningstar style/category classification."
+  synonyms: [morningstar, category, style box]
+
+spec:
+  attributes:
+    - id: category_name
+      description: "Morningstar category names"
+      values: ["Large Value", "Large Growth", "Opportunity Trust"]

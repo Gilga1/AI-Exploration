@@ -4,16 +4,24 @@ metadata:
   id: share_class
   name: "Share Class"
   description: "Fund share class (e.g. Class A, Advisory Class)."
-  synonyms: [share class, vehicle]
+  synonyms: [class, share class]
 
 spec:
+  attributes:
+    - id: class_code
+      description: "Common share class codes"
+      values: [A, S, R, "Advisory Class"]
   resolves_via:
     data_source: dim_fund
     label_column: share_class
     key_column: share_class
     match: ilike
     limit: 10
-  attributes:
-    - id: class
-      description: "Common share class codes"
-      values: [A, S, R, "Advisory Class"]
+    strategy: latest_snapshot
+  correlate_with:
+    product: fund_id
+  filter_targets:
+    - data_source: fct_fund_transactions
+      column: share_class
+    - data_source: fct_daily_fund_balances
+      column: share_class

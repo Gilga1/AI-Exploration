@@ -54,11 +54,13 @@ def validate_and_filter_dimensions(
 def enrich_candidates_with_metric_fields(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
     registry_dir = _registry_dir()
     metric_dims: dict[str, list[str]] = {}
+    metric_policies: dict[str, str | None] = {}
     if registry_dir.exists():
         staged = parse_registry_directory(registry_dir)
         for doc in staged.documents:
             if doc.kind == "metric":
                 metric_dims[doc.metadata.id] = list(doc.spec.dimensions)  # type: ignore[union-attr]
+                metric_policies[doc.metadata.id] = doc.spec.validation_policy  # type: ignore[union-attr]
 
     enriched: list[dict[str, Any]] = []
     for candidate in candidates:
@@ -73,5 +75,8 @@ def enrich_candidates_with_metric_fields(candidates: list[dict[str, Any]]) -> li
             if not dims:
                 dims = metric_dims.get(candidate.get("id", ""), [])
             item["dimensions"] = dims
+            policy = candidate.get("validation_policy")
+            if not policy:
+                item["validation_policy"] = metric_policies.get(candidate.get("id", ""))
         enriched.append(item)
     return enriched

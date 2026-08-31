@@ -327,7 +327,24 @@ class RegistryIngestor:
                                 "key_column": spec.resolves_via.key_column,
                                 "match": spec.resolves_via.match,
                                 "limit": spec.resolves_via.limit,
+                                "strategy": spec.resolves_via.strategy,
                             },
+                        },
+                    )
+                )
+            for target in spec.filter_targets:
+                statements.append(
+                    (
+                        """
+                        MATCH (e:Entity {id: $entity_id})
+                        MATCH (d:DataSource {id: $source_id})-[:HAS_COLUMN]->(c:Column {name: $col_name, source_id: $source_id})
+                        MERGE (e)-[f:FILTERS_COLUMN]->(c)
+                        SET f.data_source_id = $source_id
+                        """,
+                        {
+                            "entity_id": doc.metadata.id,
+                            "source_id": target.data_source,
+                            "col_name": target.column,
                         },
                     )
                 )

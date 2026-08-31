@@ -23,6 +23,10 @@ spec:
       type: string
       role: entity
       exposed: true
+    - name: share_class
+      type: string
+      role: dimension
+      exposed: true
     - name: transaction_date
       type: date
       role: time_key

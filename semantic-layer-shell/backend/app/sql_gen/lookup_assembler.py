@@ -4,7 +4,7 @@ import hashlib
 from typing import Any
 
 from app.sql_gen.filter_assembler import global_filters_for_data_source, predicate_to_sql
-from app.sql_gen.join_strategy import table_ref_for_data_source
+from app.sql_gen.join_strategy import build_latest_snapshot_cte, table_ref_for_data_source
 
 
 def build_entity_lookup_sql(
@@ -24,11 +24,28 @@ def build_entity_lookup_sql(
     ds_id = data_source["id"]
     alias = ds_id
 
-    join_list = joins or []
-    strategy = _join_strategy_for_target(ds_id, join_list)
-    table_ref = table_ref_for_data_source(data_source, strategy)
+    strategy = resolves.get("strategy") or _join_strategy_for_target(ds_id, joins or [])
+    if strategy == "full_history" and data_source.get("type") == "dimension":
+        strategy = "latest_snapshot"
 
-    predicates = global_filters_for_data_source(data_source, alias=alias)
+    leading_ctes: list[str] = []
+    if strategy == "latest_snapshot":
+        filter_sql = global_filters_for_data_source(data_source, alias=None)
+        leading_ctes.append(
+            build_latest_snapshot_cte(
+                ds_id,
+                data_source.get("location", ds_id),
+                data_source.get("grain_keys", []),
+                global_filter_sql=filter_sql or None,
+            )
+        )
+        table_ref = table_ref_for_data_source(data_source, strategy)
+        filter_predicates = []
+    else:
+        table_ref = table_ref_for_data_source(data_source, strategy)
+        filter_predicates = global_filters_for_data_source(data_source, alias=alias)
+
+    predicates = list(filter_predicates)
 
     if subtype and label_column == key_column:
         predicates.append(
@@ -58,12 +75,16 @@ def build_entity_lookup_sql(
                 )
 
     where_clause = "\n  AND ".join(predicates)
-    return f"""SELECT DISTINCT
+    body = f"""SELECT DISTINCT
   {alias}.{key_column} AS resolved_key,
   {alias}.{label_column} AS resolved_label
 FROM {table_ref} {alias}
 WHERE {where_clause}
 LIMIT {limit}"""
+
+    if leading_ctes:
+        return f"WITH {leading_ctes[0]}\n{body}"
+    return body
 
 
 def _join_strategy_for_target(target_id: str, joins: list[dict[str, Any]]) -> str:

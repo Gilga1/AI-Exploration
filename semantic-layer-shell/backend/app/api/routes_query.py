@@ -16,10 +16,17 @@ from app.sql_gen.assembler import SQLAssembler
 router = APIRouter(tags=["query"])
 
 
+class DisambiguationRequest(BaseModel):
+    entity_type: str
+    selected_key: str
+    selected_label: str | None = None
+
+
 class QueryRequest(BaseModel):
     question: str
     metric_id: str | None = None
     revision_hint: str | None = None
+    disambiguation: DisambiguationRequest | None = None
 
 
 class SqlPreviewRequest(BaseModel):
@@ -42,6 +49,7 @@ async def query_stream(body: QueryRequest, user: dict = Depends(require_scope("q
             body.question,
             metric_id=body.metric_id,
             revision_hint=body.revision_hint,
+            disambiguation=body.disambiguation.model_dump() if body.disambiguation else None,
         ):
             yield line
 
@@ -56,6 +64,7 @@ async def query_sync(body: QueryRequest, user: dict = Depends(require_scope("que
         body.question,
         metric_id=body.metric_id,
         revision_hint=body.revision_hint,
+        disambiguation=body.disambiguation.model_dump() if body.disambiguation else None,
     ):
         import json
 

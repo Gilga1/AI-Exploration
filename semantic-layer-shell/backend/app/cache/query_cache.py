@@ -29,6 +29,8 @@ class QueryResultCache:
         parameters: dict[str, str] | None,
         dimensions: list[str] | None,
         sql_hash: str,
+        entity_filters: list[dict[str, Any]] | None = None,
+        resolved_time: dict[str, Any] | None = None,
     ) -> str:
         payload = {
             "graph_version_id": graph_version_id,
@@ -37,8 +39,10 @@ class QueryResultCache:
             "parameters": parameters or {},
             "dimensions": sorted(dimensions or []),
             "sql_hash": sql_hash,
+            "entity_filters": entity_filters or [],
+            "resolved_time": resolved_time or {},
         }
-        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
 
     def _init_db(self) -> None:
         with sqlite3.connect(self.db_path) as conn:

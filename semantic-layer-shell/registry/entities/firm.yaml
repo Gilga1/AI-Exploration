@@ -1,0 +1,9 @@
+apiVersion: semantic-layer/v1
+kind: entity
+metadata:
+  id: firm
+  name: "Firm"
+  description: "Asset management firm or sponsor."
+  synonyms: [sponsor, manager, company]
+
+spec: {}
