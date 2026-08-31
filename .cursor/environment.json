@@ -1,9 +1,0 @@
-{
-  "name": "Qwen Agentic FT",
-  "user": "ubuntu",
-  "build": {
-    "dockerfile": "Dockerfile",
-    "context": "."
-  },
-  "install": "bash scripts/setup_env.sh"
-}

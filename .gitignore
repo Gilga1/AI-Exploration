@@ -9,15 +9,16 @@ venv/
 .mypy_cache/
 .ruff_cache/
 
-# Data & artifacts
-data/repos/
-data/raw/
-data/processed/
-data/cache/
-*.jsonl
-!eval/golden_prompts.template.jsonl
+# Node
+node_modules/
+dist/
+build/
 
-# Training outputs
+# Data & artifacts
+data/
+*.jsonl
+
+# Training / ML outputs
 checkpoints/
 outputs/
 wandb/
