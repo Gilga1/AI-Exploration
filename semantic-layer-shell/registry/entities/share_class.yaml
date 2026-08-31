@@ -1,0 +1,27 @@
+apiVersion: semantic-layer/v1
+kind: entity
+metadata:
+  id: share_class
+  name: "Share Class"
+  description: "Fund share class (e.g. Class A, Advisory Class)."
+  synonyms: [class, share class]
+
+spec:
+  attributes:
+    - id: class_code
+      description: "Common share class codes"
+      values: [A, S, R, "Advisory Class"]
+  resolves_via:
+    data_source: dim_fund
+    label_column: share_class
+    key_column: share_class
+    match: ilike
+    limit: 10
+    strategy: latest_snapshot
+  correlate_with:
+    product: fund_id
+  filter_targets:
+    - data_source: fct_fund_transactions
+      column: share_class
+    - data_source: fct_daily_fund_balances
+      column: share_class

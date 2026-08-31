@@ -1,0 +1,55 @@
+apiVersion: semantic-layer/v1
+kind: validation_policy
+metadata:
+  id: net_flow_ratio_validation
+  name: "Net Flow Ratio Validation"
+  description: "Validation rules for net flow ratio metric"
+  status: active
+
+spec:
+  applies_to:
+    - ref: net_flow_ratio
+      kind: metric
+  confidence_aggregation: min
+  rules:
+    - id: entity_resolved
+      type: entity_resolution
+      expect: optional
+      severity: high
+      on_fail: downgrade_to_low
+      message: "Could not uniquely identify the requested product or fund."
+
+    - id: rows_returned
+      type: row_count
+      min: 1
+      severity: high
+      on_fail: downgrade_to_low
+      message: "Query returned no rows for the given filters and date range."
+
+    - id: grain_check
+      type: grain_check
+      severity: medium
+      on_fail: downgrade_one_level
+      params:
+        required_dimensions:
+          - fund_id
+          - share_class
+      message: "Result grain missing required dimensions."
+
+    - id: denominator_nonzero
+      type: denominator_nonzero
+      severity: high
+      on_fail: downgrade_to_low
+      params:
+        column: avg_balance
+      message: "Denominator balance is zero."
+
+    - id: ratio_bounds
+      type: ratio_bounds
+      severity: medium
+      on_fail: downgrade_one_level
+      params:
+        column: metric_value
+        min: -1.0
+        max: 1.0
+      message: "Ratio outside expected bounds."

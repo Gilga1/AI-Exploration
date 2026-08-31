@@ -1,0 +1,39 @@
+apiVersion: semantic-layer/v1
+kind: data_source
+metadata:
+  id: dim_fund
+  name: "Fund Dimension"
+  description: "Conformed fund dimension table with SCD Type 2 history."
+  owner: data-eng-team
+  status: active
+
+spec:
+  type: dimension
+  location: analytics.marts.dim_fund
+  grain: "one row per fund_id per effective period"
+  grain_keys: [fund_id, effective_from]
+
+  schema_fields:
+    - name: fund_id
+      type: string
+      role: key
+      exposed: true
+      entity_ref: fund
+    - name: fund_name
+      type: string
+      role: dimension
+      exposed: true
+    - name: share_class
+      type: string
+      role: dimension
+      exposed: true
+    - name: effective_from
+      type: date
+      role: time_key
+      exposed: true
+    - name: effective_to
+      type: date
+      role: time_key
+      exposed: false
+
+  joins: []

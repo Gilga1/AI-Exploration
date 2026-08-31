@@ -1,0 +1,13 @@
+apiVersion: semantic-layer/v1
+kind: entity
+metadata:
+  id: vehicle
+  name: "Vehicle"
+  description: "Legal investment vehicle wrapper."
+  synonyms: [etf, mutual fund, sma]
+
+spec:
+  attributes:
+    - id: vehicle_type
+      description: "Legal vehicle wrapper"
+      values: [ETF, SMA, MF, DCIO, "529"]

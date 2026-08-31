@@ -1,0 +1,67 @@
+apiVersion: semantic-layer/v1
+kind: data_source
+metadata:
+  id: fct_fund_transactions
+  name: "Fund Transactions Fact"
+  description: |
+    One row per transaction. Grain: transaction_id.
+  owner: data-eng-team
+  status: active
+
+spec:
+  type: fact
+  location: analytics.marts.fct_fund_transactions
+  grain: "one row per transaction_id"
+  grain_keys: [transaction_id]
+
+  schema_fields:
+    - name: transaction_id
+      type: string
+      role: key
+      exposed: true
+    - name: fund_id
+      type: string
+      role: entity
+      exposed: true
+    - name: share_class
+      type: string
+      role: dimension
+      exposed: true
+    - name: transaction_date
+      type: date
+      role: time_key
+      exposed: true
+    - name: transaction_amount
+      type: decimal
+      role: amount
+      exposed: true
+    - name: net_transaction_amount
+      type: decimal
+      role: amount
+      exposed: true
+    - name: is_test_account
+      type: boolean
+      role: filter
+      exposed: false
+
+  global_filters:
+    - column: is_test_account
+      operator: "="
+      value: false
+
+  joins:
+    - target: dim_fund
+      "on": "fund_id = fund_id"
+      cardinality: many-to-one
+      type: left
+      canonical: true
+      strategy: latest_snapshot
+      notes: "Point-in-time fund attributes — latest snapshot per fund_id."
+
+    - target: fct_daily_fund_balances
+      "on": "fund_id = fund_id, transaction_date = snapshot_date"
+      cardinality: many-to-many
+      type: inner
+      canonical: true
+      requires_preaggregation: [self, target]
+      notes: "See measures using aggregate_via for the required rollups."
