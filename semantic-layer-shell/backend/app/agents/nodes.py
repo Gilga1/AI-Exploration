@@ -102,7 +102,8 @@ class QueryPipeline:
                     for term in terms[:3]:
                         candidates.extend(self.discovery.search(term, limit=5))
                     context["candidates"] = enrich_candidates_with_metric_fields(
-                        self._dedupe_candidates(candidates)
+                        self._dedupe_candidates(candidates),
+                        self.resolver,
                     )
                 elif stage == "reason":
                     if revision_hint and context.get("candidates"):

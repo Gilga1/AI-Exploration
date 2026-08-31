@@ -1,19 +1,21 @@
 # Semantic Layer Shell
 
-**Intelligence Hub pilot** — deterministic SQL assembly from a Neo4j-backed semantic registry.
+**Intelligence Hub pilot** — deterministic SQL assembly from a Neo4j-backed semantic registry with grounded entity resolution, structured insights, and YAML-driven validation.
 
 ## What it does
 
-1. Developers author **YAML metadata** (data sources, measures, metrics) and publish to Neo4j.
+1. Developers author **YAML metadata** (data sources, measures, metrics, entities, validation policies) and publish to Neo4j.
 2. Users ask **natural-language questions** in the Query Console.
-3. An **LLM** decomposes the question and picks a metric from graph-defined candidates.
-4. Python **assembles SQL** from stored fragments — the LLM never writes JOINs or aggregations.
-5. **Snowflake** executes the assembled SQL and returns results.
+3. The pipeline **decomposes** mentions (entities, time ranges) and **discovers** metrics from the graph.
+4. **Entity resolution** runs deterministic lookup SQL (name → ID); **time predicates** and **global filters** are injected into assembled SQL.
+5. Post-SQL agents produce **structured insights**, **charts**, and **validation confidence** labels (high / medium / low).
+6. **Snowflake** executes the assembled SQL (up to 1,000 rows).
 
 ## Documentation
 
 - **[Setup guide](docs/setup.md)** — install, configure, run, troubleshoot
 - **[Architecture](docs/architecture.md)** — design principles, graph schema, API, roadmap
+- **[Grounded query spec](docs/implementation-spec-grounded-query.md)** — entity resolution, validation policies, pipeline stages
 
 ## Quick start
 
@@ -57,11 +59,11 @@ semantic-layer-shell/
 │   ├── registry/       # YAML parser, validator, ingestor
 │   ├── graph/          # Neo4j client, discovery, resolver
 │   ├── llm/            # OpenAI decompose / reason / answer + embeddings
-│   ├── agents/         # Query pipeline (streaming + LangGraph)
-│   ├── sql_gen/        # Deterministic SQL assembler
+│   ├── agents/         # Query pipeline, entity/time resolution, insights, validator
+│   ├── sql_gen/        # SQL assembler, lookup assembler, filter assembler
 │   ├── warehouse/      # Snowflake client
 │   └── bootstrap.py    # Startup graph publish
 ├── frontend/src/
-├── registry/           # Pilot YAML files
+├── registry/           # Pilot YAML (data sources, measures, metrics, entities, validation policies)
 └── tests/
 ```

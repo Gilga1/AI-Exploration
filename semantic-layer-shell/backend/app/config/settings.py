@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     # Query execution
     max_result_rows: int = 1000
 
+    # When false (default), Neo4j is required for discovery/resolution; bundled registry/
+    # YAML is not read at query time. Set true (or DEBUG=true) for offline local dev.
+    allow_registry_fallback: bool = False
+
 
 @lru_cache
 def get_settings() -> Settings:

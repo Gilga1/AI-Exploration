@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from app.graph.fallback import registry_fallback_allowed
 from app.graph.neo4j_client import Neo4jClient
 from app.registry.models import EntityDocument
 from app.registry.parser import parse_registry_directory
@@ -56,6 +57,9 @@ def load_entity_catalog(client: Neo4jClient | None = None) -> list[dict[str, Any
                 catalog.append(entry)
             return catalog
 
+    if not registry_fallback_allowed():
+        return []
+
     registry_dir = Path(__file__).resolve().parents[3] / "registry"
     if not registry_dir.exists():
         return []
@@ -98,6 +102,9 @@ def load_data_sources_for_catalog(
                         ds["global_filters"] = []
                 sources.append(ds)
             return sources
+
+    if not registry_fallback_allowed():
+        return []
 
     registry_dir = Path(__file__).resolve().parents[3] / "registry"
     if not registry_dir.exists():

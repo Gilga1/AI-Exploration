@@ -1,7 +1,7 @@
 # Semantic Layer Shell — Architecture
 ### Pilot: Intelligence Hub
 
-**Status:** Phase 2 implemented (branch `cursor/semantic-layer-shell`)
+**Status:** Grounded query pipeline complete (Phases A–F on `cursor/semantic-layer-shell`)
 **Owner:** Shobhit Tiwari
 **Purpose:** A platform-agnostic semantic layer, backed by a Neo4j knowledge graph, that lets AI agents generate deterministic, idempotent SQL against a warehouse (initially Snowflake) without hardcoding to specific views. Business context, metric definitions, and join paths are supplied as data (YAML/Markdown), not code, so the platform is domain-agnostic — this document uses fund/transaction examples for concreteness, but the schema imposes no domain assumptions.
 
@@ -33,15 +33,26 @@ Registry, Neo4j bootstrap, LLM pipeline, deterministic SQL assembly, Snowflake e
 | Area | Status | Notes |
 |---|---|---|
 | Dimension injection pipeline | Done | `metric.dimensions` allow-list; `measure.dimension_context.alias` drives assembler injection |
-| Cross-table dimensions | Done | e.g. `share_class` on `dim_fund` via canonical join + `latest_snapshot` CTE |
+| Cross-table dimensions | Done | e.g. `share_class` on fact columns or via `dim_fund` join |
 | Reason confidence gate | Done | Pipeline pauses below threshold; UI confirmation resumes with explicit `metric_id` |
 | Compositional grain checks | Done | Metric dimension reachability + non-time join grain validation at publish |
+
+### Grounded query pipeline (Phases A–F) — complete
+
+| Area | Status | Notes |
+|---|---|---|
+| Entity catalog + decompose v2 | Done | Flat entity types; `mentions[]` + `time_range` from catalog-driven LLM/heuristic |
+| SQL entity resolution | Done | Lookup SQL with `global_filters`; disambiguation resume API |
+| Time + filter assembly | Done | `global_filters`, entity filters, time predicates; cache key includes filters/time |
+| Insights + visualization | Done | Structured insights with evidence; template-based Vega-Lite charts; up to 1,000 rows |
+| Validation policies | Done | YAML rule engine; H/M/L confidence labels; `response` composer event |
+| De-hardcode (Phase F) | Done | No default metric; graph-driven dimension inference; Neo4j required unless `ALLOW_REGISTRY_FALLBACK=true` |
 
 ### Phase 3 — planned
 
 Multi-warehouse, row-level security, schema-introspection-assisted YAML authoring.
 
-See **[Grounded query implementation spec](implementation-spec-grounded-query.md)** for the next major delivery: entity mention extraction, SQL-based name→ID resolution, time filters, Insights/Visualization/Validator agents, and YAML-driven validation policies.
+See **[Grounded query implementation spec](implementation-spec-grounded-query.md)** for full stage specifications.
 
 ---
 

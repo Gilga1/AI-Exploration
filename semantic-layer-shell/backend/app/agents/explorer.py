@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.graph.fallback import registry_fallback_allowed
 from app.graph.neo4j_client import Neo4jClient
 
 
@@ -24,7 +25,10 @@ class MetricExplorer:
         if rows:
             return [r for r in rows if r.get("id")]
 
-        # Registry fallback
+        if not registry_fallback_allowed():
+            return []
+
+        # Registry fallback (dev only)
         from pathlib import Path
 
         from app.registry.parser import parse_registry_directory

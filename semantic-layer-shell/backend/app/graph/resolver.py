@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from app.graph.neo4j_client import Neo4jClient
+from app.graph.fallback import registry_fallback_allowed
 from app.registry.models import MetricDocument, DataSourceDocument
 from app.registry.parser import parse_registry_directory
 
@@ -46,7 +46,7 @@ class GraphResolver:
             if metric_node:
                 return self._from_neo4j_row(metric_id, row)
 
-        return self._resolve_from_registry_files(metric_id)
+        return self._resolve_from_registry_files(metric_id) if registry_fallback_allowed() else None
 
     def _normalize_measure(self, measure: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(measure)
@@ -220,7 +220,11 @@ class GraphResolver:
         if rows and rows[0].get("nodes"):
             return {"nodes": rows[0]["nodes"], "edges": rows[0]["edges"], "subgraph": subgraph}
 
-        return self._dag_from_registry(subgraph)
+        return self._dag_from_registry(subgraph) if registry_fallback_allowed() else {
+            "nodes": [],
+            "edges": [],
+            "subgraph": subgraph,
+        }
 
     def _dag_from_registry(self, subgraph: str) -> dict[str, Any]:
         registry_dir = Path(__file__).resolve().parents[3] / "registry"
@@ -283,10 +287,11 @@ class GraphResolver:
                 node["labels"] = rows[0]["labels"]
                 return node
 
-        registry_dir = Path(__file__).resolve().parents[3] / "registry"
-        if registry_dir.exists():
-            staged = parse_registry_directory(registry_dir)
-            for doc in staged.documents:
-                if doc.metadata.id == node_id:
-                    return {"id": node_id, "labels": [doc.kind], "document": doc.model_dump()}
+        if registry_fallback_allowed():
+            registry_dir = Path(__file__).resolve().parents[3] / "registry"
+            if registry_dir.exists():
+                staged = parse_registry_directory(registry_dir)
+                for doc in staged.documents:
+                    if doc.metadata.id == node_id:
+                        return {"id": node_id, "labels": [doc.kind], "document": doc.model_dump()}
         return None

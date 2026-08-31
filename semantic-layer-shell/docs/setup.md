@@ -37,6 +37,8 @@ cp .env.example .env
 | `NEO4J_USER` | `neo4j` | Neo4j username |
 | `NEO4J_PASSWORD` | `password` | Neo4j password (must match `docker-compose.yml`) |
 | `AUTO_PUBLISH_REGISTRY` | `true` | Publish `registry/` YAML on backend startup if graph is empty |
+| `ALLOW_REGISTRY_FALLBACK` | `false` | When `true`, read bundled `registry/` at query time if Neo4j is empty (local dev only) |
+| `DEBUG` | `false` | Also enables registry fallback when `true` |
 
 #### OpenAI (LLM + embeddings)
 

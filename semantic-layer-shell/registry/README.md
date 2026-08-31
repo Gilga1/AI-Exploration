@@ -14,7 +14,8 @@ python -m scripts.bootstrap_graph
 | `data_sources/` | `data_source` | Physical tables/views, columns, joins, grain |
 | `measures/` | `measure` | Parameterized SQL fragments; **`depends_on`** → data sources |
 | `metrics/` | `metric` | Composed KPIs; **`components`** + optional **`depends_on`** → measures/metrics |
-| `entities/` | `entity` | Business glossary + resolution plumbing (`resolves_via`) — see [implementation spec](docs/implementation-spec-grounded-query.md) |
+| `entities/` | `entity` | Business glossary + `resolves_via` name→ID lookup |
+| `validation_policies/` | `validation_policy` | Post-query validation rules linked to metrics |
 
 ## Dependency model
 
@@ -33,7 +34,8 @@ python -m scripts.bootstrap_graph
 | `measures/total_transaction_amount_by_fund_day.yaml` | Rollup measure |
 | `measures/average_daily_balance_by_fund_day.yaml` | Balance measure |
 | `metrics/net_flow_ratio.yaml` | Ratio metric |
-| `entities/fund.yaml` | Fund business entity |
+| `entities/fund.yaml`, `product.yaml`, `share_class.yaml`, … | Entity catalog (7+ types) |
+| `validation_policies/net_flow_ratio_validation.yaml` | YAML validation rules for pilot metric |
 
 ## Authoring notes
 

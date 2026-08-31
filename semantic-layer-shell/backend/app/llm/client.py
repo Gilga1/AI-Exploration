@@ -6,7 +6,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.agents.dimension_selection import get_metric_dimensions, validate_and_filter_dimensions
+from app.agents.dimension_selection import (
+    get_metric_dimensions,
+    infer_dimensions_from_intent,
+    validate_and_filter_dimensions,
+)
 from app.graph.entity_catalog import format_catalog_for_prompt
 from app.config.settings import get_settings
 from app.graph.resolver import GraphResolver
@@ -142,7 +146,10 @@ class LLMClient:
             return validate_and_filter_dimensions(selection, metric_id, self.resolver)
 
         if not self.enabled or not candidates:
-            selection = self._reason_heuristic(question, candidates, intent or {})
+            intent = dict(intent or {})
+            intent.setdefault("raw_question", question)
+            intent.setdefault("search_terms", [question])
+            selection = self._reason_heuristic(question, candidates, intent)
         else:
             selection = self._reason_with_llm(question, candidates, intent or {})
 
@@ -289,16 +296,6 @@ class LLMClient:
             "llm": False,
         }
 
-    @staticmethod
-    def _infer_dimensions_from_question(question: str, allowed: list[str]) -> list[str]:
-        q = question.lower()
-        inferred: list[str] = []
-        if "fund" in q and "fund_id" in allowed:
-            inferred.append("fund_id")
-        if ("share class" in q or "share_class" in q) and "share_class" in allowed:
-            inferred.append("share_class")
-        return inferred
-
     def _reason_heuristic(
         self,
         question: str,
@@ -308,14 +305,10 @@ class LLMClient:
         metrics = [c for c in candidates if c.get("kind") == "metric"]
         pool = metrics or candidates
         if not pool:
-            return {
-                "metric_id": "net_flow_ratio",
-                "parameters": {},
-                "dimensions": [],
-                "confidence": 0.5,
-                "rationale": "Defaulted to pilot metric.",
-                "llm": False,
-            }
+            raise ValueError(
+                "No metric candidates found. Publish the registry to Neo4j and ensure "
+                "discovery returns results, or set ALLOW_REGISTRY_FALLBACK=true for local dev."
+            )
 
         top = pool[0]
         second_score = pool[1].get("score", 0.0) if len(pool) > 1 else 0.0
@@ -323,9 +316,8 @@ class LLMClient:
         gap = max(0.0, top_score - float(second_score))
         confidence = min(0.95, 0.55 + gap)
 
-        dimensions = self._infer_dimensions_from_question(
-            question, top.get("dimensions") or get_metric_dimensions(top["id"], self.resolver)
-        )
+        allowed = top.get("dimensions") or get_metric_dimensions(top["id"], self.resolver)
+        dimensions = infer_dimensions_from_intent(intent, allowed)
 
         return {
             "metric_id": top["id"],

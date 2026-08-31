@@ -1,6 +1,6 @@
 # Implementation Spec — Grounded Query Resolution & Rich Response Pipeline
 
-**Status:** In progress (Phase A–E on `cursor/grounded-query-4337`; Phase F de-hardcode pending)  
+**Status:** Complete (Phases A–F on `cursor/semantic-layer-shell`)  
 **Branch target:** `cursor/grounded-query-4337`  
 **Owner:** Shobhit Tiwari  
 **Depends on:** Phase 1–2 + dimension pipeline (complete)

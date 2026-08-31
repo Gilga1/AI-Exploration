@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.graph.fallback import registry_fallback_allowed
 from app.graph.neo4j_client import Neo4jClient
 from app.llm.embeddings import EmbeddingClient
 
@@ -21,7 +22,9 @@ class GraphDiscovery:
         if keyword_results:
             return keyword_results
 
-        return self._fallback_search(query, limit)
+        if registry_fallback_allowed():
+            return self._fallback_search(query, limit)
+        return []
 
     def _vector_search(self, query: str, limit: int) -> list[dict[str, Any]]:
         vector = self.embeddings.embed(query)
