@@ -6,6 +6,7 @@ import { ResultsPanel } from "./ResultsPanel";
 import { InsightsPanel } from "./InsightsPanel";
 import { ChartPanel } from "./ChartPanel";
 import { EntityResolutionPanel } from "./EntityResolutionPanel";
+import { ValidationBanner } from "./ValidationBanner";
 import { StreamEvent } from "../../services/api";
 
 function ConfirmationPanel({
@@ -148,6 +149,7 @@ export function QueryConsole() {
       <EntityResolutionPanel events={events} />
       <SqlPreview events={events} />
       <ResultsPanel events={events} />
+      <ValidationBanner events={events} />
       <InsightsPanel events={events} />
       <ChartPanel events={events} />
     </div>

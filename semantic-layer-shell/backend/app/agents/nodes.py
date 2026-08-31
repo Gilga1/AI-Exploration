@@ -8,6 +8,8 @@ from langgraph.graph import END, StateGraph
 from app.agents.analysis import analyze_rows
 from app.agents.explorer import MetricExplorer
 from app.agents.insights import build_result_package, run_post_sql_agents
+from app.agents.response_composer import compose_response
+from app.agents.validator import apply_insight_labels, load_validation_policy, run_validation
 from app.agents.dimension_selection import enrich_candidates_with_metric_fields
 from app.agents.revision import apply_revision
 from app.agents.entity_resolution import EntityResolver, build_mentions_from_intent
@@ -75,8 +77,9 @@ class QueryPipeline:
             "execute",
             "analyze",
             "post_sql",
+            "validate",
+            "compose",
             "explorer",
-            "answer",
         ]
         context: dict[str, Any] = {
             "question": question,
@@ -300,24 +303,54 @@ class QueryPipeline:
                     }
                     if viz_payload:
                         yield {"event": "visualization", "chart": viz_payload}
-                elif stage == "explorer":
-                    related = self.explorer.related_metrics(context["selection"]["metric_id"])
-                    context["related_metrics"] = related
-                    yield {"event": "explorer", "related_metrics": related}
-                elif stage == "answer":
+                    context["result_package"] = result_package
+                elif stage == "validate":
+                    metric = context["selection"]["metric_id"]
+                    policy = load_validation_policy(metric, self.client)
+                    validation = run_validation(
+                        policy,
+                        result_package=context.get("result_package", {}),
+                        insights=context.get("insights", {}),
+                        entity_resolutions=context.get("entity_resolution", {}).get("resolutions", []),
+                        entity_filters=context.get("entity_resolution", {}).get("filters", []),
+                        resolved_time=context.get("resolved_time"),
+                        dimensions=context.get("selection", {}).get("dimensions", []),
+                    )
+                    context["validation"] = validation
+                    yield {"event": "validation", "validation": validation}
+                elif stage == "compose":
                     assembled = context.get("assembled")
+                    metric = context["selection"]["metric_id"]
                     insights = context.get("insights", {})
-                    headline = insights.get("headline", "") if isinstance(insights, dict) else str(insights)
-                    answer = self.llm.answer(
+                    validation = context.get("validation", {})
+                    labeled_insights = apply_insight_labels(insights, validation)
+                    context["insights"] = labeled_insights
+                    narrative = self.llm.answer(
                         question=question,
-                        metric_id=context["selection"]["metric_id"],
+                        metric_id=metric,
                         rows=context.get("rows", []),
                         columns=context.get("columns", []),
                         sql=getattr(assembled, "sql", None),
                     )
-                    if headline and headline not in answer:
-                        answer = f"{answer}\n\n{headline}"
-                    yield {"event": "token", "stage": "answer", "delta": answer}
+                    payload = compose_response(
+                        question=question,
+                        insights=labeled_insights,
+                        charts=context.get("chart"),
+                        validation=validation,
+                        rows=context.get("rows", []),
+                        columns=context.get("columns", []),
+                        provenance=context.get("result_package", {}).get("provenance", {}),
+                        narrative=narrative,
+                    )
+                    context["response"] = payload
+                    yield {"event": "response", "payload": payload}
+                    headline = labeled_insights.get("headline", "")
+                    if headline:
+                        yield {"event": "token", "stage": "answer", "delta": headline}
+                elif stage == "explorer":
+                    related = self.explorer.related_metrics(context["selection"]["metric_id"])
+                    context["related_metrics"] = related
+                    yield {"event": "explorer", "related_metrics": related}
             except Exception as exc:
                 yield {"event": "error", "stage": stage, "error": str(exc)}
                 return
@@ -352,6 +385,7 @@ class QueryPipeline:
                 "row_count": len(context.get("rows", [])),
                 "llm_enabled": self.llm.enabled,
                 "cache_key": context.get("cache_key"),
+                "overall_confidence": (context.get("validation") or {}).get("overall_confidence"),
             },
         }
 
