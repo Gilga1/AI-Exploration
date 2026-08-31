@@ -12,6 +12,7 @@ from app.registry.models import (
     MetricDocument,
     RegistryDocument,
     StagedRegistry,
+    ValidationPolicyDocument,
 )
 
 
@@ -25,6 +26,8 @@ def _parse_document(data: dict[str, Any]) -> RegistryDocument:
         return MetricDocument.model_validate(data)
     if kind == "entity":
         return EntityDocument.model_validate(data)
+    if kind == "validation_policy":
+        return ValidationPolicyDocument.model_validate(data)
     raise ValueError(f"Unknown registry kind: {kind!r}")
 
 

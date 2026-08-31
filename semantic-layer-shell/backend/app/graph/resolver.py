@@ -86,7 +86,18 @@ class GraphResolver:
             if mid and mid in measure_sources:
                 normalized["depends_on_refs"] = measure_sources[mid]
             measures.append(normalized)
-        data_sources = [dict(d) for d in row.get("data_sources", []) if d]
+        data_sources = []
+        for d in row.get("data_sources", []) or []:
+            if not d:
+                continue
+            ds = dict(d)
+            gf = ds.get("global_filters")
+            if isinstance(gf, str):
+                try:
+                    ds["global_filters"] = json.loads(gf)
+                except json.JSONDecodeError:
+                    ds["global_filters"] = []
+            data_sources.append(ds)
         joins = [j for j in row.get("joins", []) if j and j.get("source")]
         node_ids = [metric_id] + [m.get("id", "") for m in measures] + [d.get("id", "") for d in data_sources]
         edge_ids = [f"{j['source']}->JOINS_TO->{j['target']}" for j in joins]
@@ -136,6 +147,9 @@ class GraphResolver:
                     "type": ds_doc.spec.type,
                     "grain_keys": ds_doc.spec.grain_keys,
                     "schema_fields": [f.model_dump() for f in ds_doc.spec.schema_fields],
+                    "global_filters": [
+                        gf.model_dump(exclude_none=True) for gf in ds_doc.spec.global_filters
+                    ],
                 }
             )
             node_ids.append(ds_doc.metadata.id)
@@ -151,6 +165,7 @@ class GraphResolver:
                         "sql_fragment": child.spec.sql_fragment,  # type: ignore[union-attr]
                         "spec_parameters": child.spec.parameters,  # type: ignore[union-attr]
                         "dimension_context": child.spec.dimension_context,  # type: ignore[union-attr]
+                        "time_filter": child.spec.time_filter,  # type: ignore[union-attr]
                         "depends_on_refs": [dep.get("ref", "") for dep in child.spec.depends_on],  # type: ignore[union-attr]
                     }
                 )

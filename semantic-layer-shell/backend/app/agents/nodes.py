@@ -8,8 +8,11 @@ from langgraph.graph import END, StateGraph
 from app.agents.analysis import analyze_rows
 from app.agents.explorer import MetricExplorer
 from app.agents.insights import generate_insights
-from app.agents.revision import apply_revision
 from app.agents.dimension_selection import enrich_candidates_with_metric_fields
+from app.agents.revision import apply_revision
+from app.agents.entity_resolution import EntityResolver, build_mentions_from_intent
+from app.agents.time_resolution import resolve_time_range
+from app.graph.entity_catalog import load_data_sources_for_catalog, load_entity_catalog
 from app.config.settings import get_settings
 from app.agents.visualization import build_chart_spec
 from app.audit.store import AuditStore
@@ -49,6 +52,8 @@ class QueryPipeline:
         self.cache = QueryResultCache()
         self.explorer = MetricExplorer(self.client)
 
+        self.entity_resolver = EntityResolver(self.warehouse)
+
     async def run(
         self,
         question: str,
@@ -59,6 +64,8 @@ class QueryPipeline:
             "decompose",
             "discover",
             "reason",
+            "resolve_entities",
+            "resolve_time",
             "resolve",
             "assemble",
             "execute",
@@ -71,6 +78,7 @@ class QueryPipeline:
         context: dict[str, Any] = {
             "question": question,
             "revision_hint": revision_hint,
+            "entity_catalog": load_entity_catalog(self.client),
         }
 
         for stage in stages:
@@ -78,7 +86,9 @@ class QueryPipeline:
             yield {"event": "stage_start", "stage": stage}
             try:
                 if stage == "decompose":
-                    context["intent"] = self.llm.decompose(question)
+                    context["intent"] = self.llm.decompose(
+                        question, context.get("entity_catalog", [])
+                    )
                 elif stage == "discover":
                     terms = context["intent"].get("search_terms", [question])
                     candidates = []
@@ -98,7 +108,10 @@ class QueryPipeline:
                         )
                     else:
                         context["selection"] = self.llm.reason(
-                            question, context["candidates"], metric_id=metric_id
+                            question,
+                            context["candidates"],
+                            metric_id=metric_id,
+                            intent=context.get("intent"),
                         )
                     sel = context["selection"]
                     threshold = get_settings().reason_confidence_threshold
@@ -125,6 +138,37 @@ class QueryPipeline:
                             ),
                         }
                         return
+                elif stage == "resolve_entities":
+                    mentions = build_mentions_from_intent(context.get("intent", {}))
+                    resolution_sources = load_data_sources_for_catalog(
+                        context.get("entity_catalog", []), self.client
+                    )
+                    entity_result = self.entity_resolver.resolve(
+                        mentions,
+                        context.get("entity_catalog", []),
+                        resolution_sources,
+                    )
+                    context["entity_resolution"] = entity_result.to_dict()
+                    ambiguous = [
+                        r for r in entity_result.resolutions if r.get("status") == "ambiguous"
+                    ]
+                    if ambiguous:
+                        yield {
+                            "event": "disambiguation_required",
+                            "entity_type": ambiguous[0].get("entity_type"),
+                            "candidates": ambiguous[0].get("candidates", []),
+                        }
+                        return
+                    yield {
+                        "event": "entity_resolution",
+                        "resolutions": entity_result.resolutions,
+                    }
+                elif stage == "resolve_time":
+                    context["resolved_time"] = resolve_time_range(
+                        context.get("intent", {}).get("time_range")
+                    )
+                    if context["resolved_time"]:
+                        yield {"event": "time_resolution", "time": context["resolved_time"]}
                 elif stage == "resolve":
                     selected_id = context["selection"]["metric_id"]
                     subgraph = self.resolver.resolve_metric(selected_id)
@@ -134,10 +178,13 @@ class QueryPipeline:
                 elif stage == "assemble":
                     subgraph = context["subgraph"]
                     selection = context["selection"]
+                    entity_resolution = context.get("entity_resolution", {})
                     assembled = self.assembler.assemble(
                         subgraph,
                         parameters=selection.get("parameters", {}),
                         dimensions=selection.get("dimensions"),
+                        entity_filters=entity_resolution.get("filters", []),
+                        resolved_time=context.get("resolved_time"),
                     )
                     context["assembled"] = assembled
                     yield {
@@ -148,6 +195,11 @@ class QueryPipeline:
                         "sql_hash": assembled.sql_hash,
                         "node_ids": assembled.node_ids,
                         "edge_ids": assembled.edge_ids,
+                        "filters_applied": entity_resolution.get("filters", []),
+                        "time_range_applied": context.get("resolved_time"),
+                        "global_filters_applied": assembled.provenance.get(
+                            "global_filters_applied", []
+                        ),
                     }
                 elif stage == "execute":
                     assembled = context["assembled"]

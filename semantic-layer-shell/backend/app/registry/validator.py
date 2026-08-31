@@ -13,6 +13,8 @@ from app.registry.models import (
     ValidationResult,
 )
 
+from app.registry.entity_validation import validate_entity_specs
+from app.registry.global_filters_validation import validate_global_filters
 from app.registry.dimension_validation import (
     validate_compositional_dimension_grain,
     validate_metric_dimensions,
@@ -285,6 +287,8 @@ def validate_staged_registry(staged: StagedRegistry) -> ValidationResult:
     all_errors.extend(validate_measure_output_exposed(documents))
     all_errors.extend(validate_entity_references(documents))
     all_errors.extend(validate_dimensional_grain(documents))
+    all_errors.extend(validate_global_filters(documents))
+    all_errors.extend(validate_entity_specs(documents))
     all_errors.extend(validate_metric_dimensions(documents))
     all_errors.extend(validate_compositional_dimension_grain(documents))
 

@@ -1,0 +1,33 @@
+apiVersion: semantic-layer/v1
+kind: validation_policy
+metadata:
+  id: net_flow_ratio_validation
+  name: "Net Flow Ratio Validation"
+  description: "Validation rules for net flow ratio metric"
+  status: active
+
+spec:
+  applies_to:
+    - ref: net_flow_ratio
+      kind: metric
+  confidence_aggregation: min
+  rules:
+    - id: grain_check
+      type: grain_check
+      severity: high
+      params:
+        required_dimensions:
+          - fund_id
+          - share_class
+    - id: denominator_nonzero
+      type: denominator_nonzero
+      severity: high
+      params:
+        column: avg_balance
+    - id: ratio_bounds
+      type: ratio_bounds
+      severity: medium
+      params:
+        column: metric_value
+        min: -1.0
+        max: 1.0

@@ -2,19 +2,33 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.sql_gen.filter_assembler import global_filters_for_data_source
+
+
+def table_ref_for_data_source(data_source: dict[str, Any], strategy: str) -> str:
+    ds_id = data_source["id"]
+    if strategy == "latest_snapshot":
+        return f"{ds_id}_latest"
+    return data_source.get("location", ds_id)
+
 
 def build_latest_snapshot_cte(
     target_id: str,
     location: str,
     grain_keys: list[str],
     effective_to_column: str = "effective_to",
+    global_filter_sql: list[str] | None = None,
 ) -> str:
     """Wrap a dimension table to keep only the latest snapshot row per grain key."""
     partition = ", ".join(grain_keys) or "1"
     order_col = effective_to_column
+    where_clause = ""
+    if global_filter_sql:
+        where_clause = "WHERE " + "\n    AND ".join(global_filter_sql)
     return f"""{target_id}_latest AS (
   SELECT *
   FROM {location}
+  {where_clause}
   QUALIFY ROW_NUMBER() OVER (PARTITION BY {partition} ORDER BY {order_col} DESC NULLS LAST) = 1
 )"""
 
@@ -56,11 +70,14 @@ def prepend_snapshot_ctes(joins: list[dict[str, Any]], data_sources: list[dict[s
         if not ds:
             continue
         seen.add(target)
+        strategy = join.get("strategy") or (join.get("props") or {}).get("strategy")
+        filter_sql = global_filters_for_data_source(ds)
         ctes.append(
             build_latest_snapshot_cte(
                 target,
                 ds.get("location", target),
                 ds.get("grain_keys", []),
+                global_filter_sql=filter_sql or None,
             )
         )
     return ctes

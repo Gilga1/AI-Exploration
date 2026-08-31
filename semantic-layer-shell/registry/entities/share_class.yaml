@@ -1,0 +1,19 @@
+apiVersion: semantic-layer/v1
+kind: entity
+metadata:
+  id: share_class
+  name: "Share Class"
+  description: "Fund share class (e.g. Class A, Advisory Class)."
+  synonyms: [share class, vehicle]
+
+spec:
+  resolves_via:
+    data_source: dim_fund
+    label_column: share_class
+    key_column: share_class
+    match: ilike
+    limit: 10
+  attributes:
+    - id: class
+      description: "Common share class codes"
+      values: [A, S, R, "Advisory Class"]

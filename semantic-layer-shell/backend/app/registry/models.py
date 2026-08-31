@@ -11,6 +11,7 @@ class RegistryKind(str, Enum):
     MEASURE = "measure"
     METRIC = "metric"
     ENTITY = "entity"
+    VALIDATION_POLICY = "validation_policy"
 
 
 class Metadata(BaseModel):
@@ -35,6 +36,14 @@ class SchemaField(BaseModel):
     entity_ref: str | None = None
 
 
+class GlobalFilterPredicate(BaseModel):
+    column: str | None = None
+    operator: str | None = None
+    value: Any = None
+    values: list[Any] = Field(default_factory=list)
+    sql: str | None = None
+
+
 class JoinSpec(BaseModel):
     target: str
     on: str
@@ -53,6 +62,7 @@ class DataSourceSpec(BaseModel):
     grain_keys: list[str]
     schema_fields: list[SchemaField]
     joins: list[JoinSpec] = Field(default_factory=list)
+    global_filters: list[GlobalFilterPredicate] = Field(default_factory=list)
 
 
 class DataSourceDocument(BaseModel):
@@ -99,6 +109,7 @@ class MetricSpec(BaseModel):
     time_key: str = ""
     business_rules: list[str] = Field(default_factory=list)
     depends_on: list[dict[str, str]] = Field(default_factory=list)
+    validation_policy: str | None = None
 
 
 class MetricDocument(BaseModel):
@@ -108,14 +119,59 @@ class MetricDocument(BaseModel):
     spec: MetricSpec
 
 
+class EntityAttribute(BaseModel):
+    id: str
+    description: str = ""
+    values: list[str] = Field(default_factory=list)
+
+
+class ResolvesVia(BaseModel):
+    data_source: str
+    label_column: str
+    key_column: str
+    match: Literal["exact", "ilike", "prefix"] = "ilike"
+    limit: int = 10
+
+
+class FilterTarget(BaseModel):
+    data_source: str
+    column: str
+
+
+class EntitySpec(BaseModel):
+    attributes: list[EntityAttribute] = Field(default_factory=list)
+    resolves_via: ResolvesVia | None = None
+    correlate_with: dict[str, str] = Field(default_factory=dict)
+    filter_targets: list[FilterTarget] = Field(default_factory=list)
+
+
 class EntityDocument(BaseModel):
     apiVersion: Literal["semantic-layer/v1"]
     kind: Literal["entity"]
     metadata: Metadata
-    spec: dict[str, Any] = Field(default_factory=dict)
+    spec: EntitySpec = Field(default_factory=EntitySpec)
 
 
-RegistryDocument = DataSourceDocument | MeasureDocument | MetricDocument | EntityDocument
+class ValidationPolicySpec(BaseModel):
+    applies_to: list[dict[str, str]] = Field(default_factory=list)
+    confidence_aggregation: Literal["min", "weighted"] = "min"
+    rules: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ValidationPolicyDocument(BaseModel):
+    apiVersion: Literal["semantic-layer/v1"]
+    kind: Literal["validation_policy"]
+    metadata: Metadata
+    spec: ValidationPolicySpec
+
+
+RegistryDocument = (
+    DataSourceDocument
+    | MeasureDocument
+    | MetricDocument
+    | EntityDocument
+    | ValidationPolicyDocument
+)
 
 
 class ValidationError(BaseModel):

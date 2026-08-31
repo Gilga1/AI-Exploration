@@ -7,23 +7,38 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.agents.dimension_selection import get_metric_dimensions, validate_and_filter_dimensions
+from app.graph.entity_catalog import format_catalog_for_prompt
 from app.config.settings import get_settings
 from app.graph.resolver import GraphResolver
 
 logger = logging.getLogger(__name__)
 
 
+class MentionResult(BaseModel):
+    text: str
+    entity_type: str | None = None
+    role: str = "filter"
+    subtype: str | None = None
+    confidence: float = 0.0
+
+
+class TimeRangeResult(BaseModel):
+    text: str
+    type: str = "relative"
+
+
 class DecomposeResult(BaseModel):
     intent: str = "metric_query"
     search_terms: list[str] = Field(default_factory=list)
-    entities: list[str] = Field(default_factory=list)
-    time_range: str | None = None
+    mentions: list[MentionResult] = Field(default_factory=list)
+    time_range: TimeRangeResult | str | None = None
 
 
 class ReasonResult(BaseModel):
     metric_id: str
     parameters: dict[str, str] = Field(default_factory=dict)
     dimensions: list[str] = Field(default_factory=list)
+    mention_bindings: list[dict[str, Any]] = Field(default_factory=list)
     confidence: float = 0.0
     rationale: str = ""
 
@@ -68,37 +83,51 @@ class LLMClient:
         data = json.loads(content)
         return model_cls.model_validate(data)
 
-    def decompose(self, question: str) -> dict[str, Any]:
+    def decompose(
+        self, question: str, entity_catalog: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
+        entity_catalog = entity_catalog or []
         if not self.enabled:
-            return self._decompose_heuristic(question)
+            return self._decompose_heuristic(question, entity_catalog)
 
+        catalog_text = format_catalog_for_prompt(entity_catalog)
         try:
             result = self._chat_json(
                 system=(
                     "You decompose natural-language data questions into structured intent. "
-                    "Return JSON with keys: intent, search_terms (list of strings for semantic search), "
-                    "entities (business nouns), time_range (optional string or null)."
+                    "Return JSON with keys: intent, search_terms (list), mentions (list of objects with "
+                    "text, entity_type, role, subtype, confidence), time_range (object with text and type or null). "
+                    "entity_type MUST be one of the provided entity catalog ids. "
+                    "role is filter or dimension. Extract time phrases like 'last 2 weeks' into time_range."
                 ),
-                user=f"Question: {question}",
+                user=f"Question: {question}\n\nEntity catalog:\n{catalog_text}",
                 model_cls=DecomposeResult,
             )
+            mentions = [m.model_dump() for m in result.mentions]
+            time_range = result.time_range
+            if isinstance(time_range, TimeRangeResult):
+                time_range = time_range.model_dump()
+            elif isinstance(time_range, str):
+                time_range = {"text": time_range, "type": "relative"}
             return {
                 "intent": result.intent,
                 "search_terms": result.search_terms or [question],
-                "entities": result.entities,
-                "time_range": result.time_range,
+                "mentions": mentions,
+                "entities": [m["text"] for m in mentions],
+                "time_range": time_range,
                 "raw_question": question,
                 "llm": True,
             }
         except Exception as exc:
             logger.warning("LLM decompose failed, using heuristic: %s", exc)
-            return self._decompose_heuristic(question)
+            return self._decompose_heuristic(question, entity_catalog)
 
     def reason(
         self,
         question: str,
         candidates: list[dict[str, Any]],
         metric_id: str | None = None,
+        intent: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if metric_id:
             selection = {
@@ -113,15 +142,20 @@ class LLMClient:
             return validate_and_filter_dimensions(selection, metric_id, self.resolver)
 
         if not self.enabled or not candidates:
-            selection = self._reason_heuristic(question, candidates)
+            selection = self._reason_heuristic(question, candidates, intent or {})
         else:
-            selection = self._reason_with_llm(question, candidates)
+            selection = self._reason_with_llm(question, candidates, intent or {})
 
         return validate_and_filter_dimensions(
             selection, selection["metric_id"], self.resolver
         )
 
-    def _reason_with_llm(self, question: str, candidates: list[dict[str, Any]]) -> dict[str, Any]:
+    def _reason_with_llm(
+        self,
+        question: str,
+        candidates: list[dict[str, Any]],
+        intent: dict[str, Any],
+    ) -> dict[str, Any]:
         candidate_lines = "\n".join(
             self._format_candidate(c) for c in candidates[:15]
         )
@@ -132,27 +166,32 @@ class LLMClient:
                     "You MUST pick metric_id from the provided ids only — never invent one. "
                     "For dimensions, you MUST only choose from each metric's allowed_dimensions list when "
                     "the user asks for a breakdown (e.g. by fund, by share class). "
-                    "Return JSON: metric_id, parameters (dict of param->value), dimensions (list), "
-                    "confidence (0-1), rationale (short string). Prefer kind=metric when available."
+                    "Return JSON: metric_id, parameters, dimensions, mention_bindings (list), "
+                    "confidence (0-1), rationale. Prefer kind=metric when available."
                 ),
-                user=f"Question: {question}\n\nCandidates:\n{candidate_lines}",
+                user=(
+                    f"Question: {question}\n"
+                    f"Mentions from decompose: {intent.get('mentions', [])}\n\n"
+                    f"Candidates:\n{candidate_lines}"
+                ),
                 model_cls=ReasonResult,
             )
             valid_ids = {c["id"] for c in candidates}
             if result.metric_id not in valid_ids:
                 logger.warning("LLM picked invalid metric %s, falling back", result.metric_id)
-                return self._reason_heuristic(question, candidates)
+                return self._reason_heuristic(question, candidates, intent)
             return {
                 "metric_id": result.metric_id,
                 "parameters": result.parameters,
                 "dimensions": result.dimensions,
+                "mention_bindings": result.mention_bindings,
                 "confidence": result.confidence,
                 "rationale": result.rationale,
                 "llm": True,
             }
         except Exception as exc:
             logger.warning("LLM reason failed, using heuristic: %s", exc)
-            return self._reason_heuristic(question, candidates)
+            return self._reason_heuristic(question, candidates, intent)
 
     @staticmethod
     def _format_candidate(candidate: dict[str, Any]) -> str:
@@ -205,13 +244,47 @@ class LLMClient:
             return self._answer_heuristic(metric_id, rows)
 
     @staticmethod
-    def _decompose_heuristic(question: str) -> dict[str, Any]:
+    def _decompose_heuristic(
+        question: str, entity_catalog: list[dict[str, Any]]
+    ) -> dict[str, Any]:
         terms = [t.strip("?.,!") for t in question.lower().split() if len(t) > 3]
+        mentions: list[dict[str, Any]] = []
+        q_lower = question.lower()
+        for entity in entity_catalog:
+            candidates = [entity.get("name", "")] + (entity.get("synonyms") or [])
+            for attr in entity.get("attributes") or []:
+                for value in attr.get("values") or []:
+                    if str(value).lower() in q_lower:
+                        mentions.append(
+                            {
+                                "text": str(value),
+                                "entity_type": entity["id"],
+                                "role": "filter",
+                                "subtype": str(value),
+                                "confidence": 0.7,
+                            }
+                        )
+            for label in candidates:
+                if label and label.lower() in q_lower:
+                    mentions.append(
+                        {
+                            "text": label,
+                            "entity_type": entity["id"],
+                            "role": "filter",
+                            "confidence": 0.6,
+                        }
+                    )
+
+        time_range = None
+        if "last" in q_lower and "week" in q_lower:
+            time_range = {"text": "last 2 weeks", "type": "relative"}
+
         return {
             "intent": "metric_query",
             "search_terms": terms or [question],
-            "entities": [],
-            "time_range": None,
+            "mentions": mentions,
+            "entities": [m["text"] for m in mentions],
+            "time_range": time_range,
             "raw_question": question,
             "llm": False,
         }
@@ -226,7 +299,12 @@ class LLMClient:
             inferred.append("share_class")
         return inferred
 
-    def _reason_heuristic(self, question: str, candidates: list[dict[str, Any]]) -> dict[str, Any]:
+    def _reason_heuristic(
+        self,
+        question: str,
+        candidates: list[dict[str, Any]],
+        intent: dict[str, Any],
+    ) -> dict[str, Any]:
         metrics = [c for c in candidates if c.get("kind") == "metric"]
         pool = metrics or candidates
         if not pool:
@@ -253,6 +331,11 @@ class LLMClient:
             "metric_id": top["id"],
             "parameters": {},
             "dimensions": dimensions,
+            "mention_bindings": [
+                {"mention_index": i, "entity_type": m.get("entity_type"), "apply_as": "filter"}
+                for i, m in enumerate(intent.get("mentions") or [])
+                if m.get("entity_type")
+            ],
             "confidence": confidence,
             "rationale": "Heuristic top discovery candidate.",
             "llm": False,

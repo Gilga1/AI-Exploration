@@ -35,6 +35,8 @@ spec:
     - kind: measure
       ref: average_daily_balance_by_fund_day
 
+  validation_policy: net_flow_ratio_validation
+
   business_rules:
     - "Excludes test/internal accounts."
     - "Ratio is null when the denominator balance is zero."

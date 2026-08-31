@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass
+from typing import Any
 
 from app.graph.resolver import ResolvedSubgraph
 from app.sql_gen.dimension_resolver import inject_dimensions_into_fragment, resolve_measure_dimensions
+from app.sql_gen.filter_assembler import (
+    entity_filter_to_sql,
+    global_filters_for_data_source,
+    inject_where_predicates,
+)
 from app.sql_gen.join_strategy import prepend_snapshot_ctes
+from app.agents.time_resolution import time_predicate_for_measure
 
 PARAM_PATTERN = re.compile(r"\{\{(\w+)\.(\w+)\}\}")
 
@@ -30,16 +38,27 @@ class SQLAssembler:
         subgraph: ResolvedSubgraph,
         parameters: dict[str, str] | None = None,
         dimensions: list[str] | None = None,
+        entity_filters: list[dict[str, Any]] | None = None,
+        resolved_time: dict[str, Any] | None = None,
     ) -> AssembledSQL:
         parameters = parameters or {}
         dimensions = dimensions or []
+        entity_filters = entity_filters or []
         metric = subgraph.metric
         metric_spec = metric.get("spec", metric)
         allowed_dimensions = metric_spec.get("dimensions", metric.get("dimensions", []))
         self._validate_dimensions(dimensions, allowed_dimensions, subgraph.metric_id)
 
+        global_filters_applied = self._collect_global_filters_applied(subgraph)
+
         if subgraph.measures:
-            sql = self._assemble_from_measures(subgraph, parameters, dimensions)
+            sql = self._assemble_from_measures(
+                subgraph,
+                parameters,
+                dimensions,
+                entity_filters,
+                resolved_time,
+            )
         else:
             sql = self._assemble_metric_formula(subgraph, parameters, dimensions)
 
@@ -55,8 +74,24 @@ class SQLAssembler:
                 "metric_id": subgraph.metric_id,
                 "parameters": parameters,
                 "dimensions": dimensions,
+                "entity_filters": entity_filters,
+                "time_range_applied": resolved_time,
+                "global_filters_applied": global_filters_applied,
             },
         )
+
+    def _collect_global_filters_applied(self, subgraph: ResolvedSubgraph) -> list[dict[str, Any]]:
+        applied: list[dict[str, Any]] = []
+        for ds in subgraph.data_sources:
+            filters = ds.get("global_filters") or []
+            if isinstance(filters, str):
+                try:
+                    filters = json.loads(filters)
+                except json.JSONDecodeError:
+                    filters = []
+            if filters:
+                applied.append({"data_source_id": ds["id"], "predicates": filters})
+        return applied
 
     def _validate_dimensions(
         self, requested: list[str], allowed: list[str], metric_id: str
@@ -75,7 +110,10 @@ class SQLAssembler:
         subgraph: ResolvedSubgraph,
         parameters: dict[str, str],
         dimensions: list[str],
+        entity_filters: list[dict[str, Any]],
+        resolved_time: dict[str, Any] | None,
     ) -> str:
+        ds_index = {ds["id"]: ds for ds in subgraph.data_sources}
         snapshot_ctes = prepend_snapshot_ctes(subgraph.joins, subgraph.data_sources)
         ctes: list[str] = list(snapshot_ctes)
         for measure in subgraph.measures:
@@ -94,6 +132,41 @@ class SQLAssembler:
                     measure, dimensions, subgraph.data_sources, subgraph.joins
                 )
                 resolved_fragment = inject_dimensions_into_fragment(resolved_fragment, resolved_dims)
+
+            alias = (measure.get("dimension_context") or {}).get("alias")
+            if isinstance(measure.get("dimension_context"), str):
+                try:
+                    alias = json.loads(measure["dimension_context"]).get("alias")
+                except json.JSONDecodeError:
+                    alias = None
+
+            predicates: list[str] = []
+            primary_id = (measure.get("depends_on_refs") or [None])[0]
+            if primary_id and primary_id in ds_index:
+                predicates.extend(global_filters_for_data_source(ds_index[primary_id], alias=alias))
+
+            schema_columns = {
+                f["name"]
+                for f in ds_index.get(primary_id, {}).get("schema_fields", [])
+            }
+            for ef in entity_filters:
+                column = ef.get("column")
+                if column and column in schema_columns:
+                    predicates.append(
+                        entity_filter_to_sql(
+                            column,
+                            ef.get("operator", "="),
+                            ef.get("value"),
+                            alias=alias,
+                        )
+                    )
+
+            time_pred = time_predicate_for_measure(resolved_time, measure)
+            if time_pred:
+                predicates.append(time_pred)
+
+            resolved_fragment = inject_where_predicates(resolved_fragment, predicates)
+
             cte_name = f"{role}_measure"
             ctes.append(f"{cte_name} AS (\n{resolved_fragment.strip()}\n)")
 

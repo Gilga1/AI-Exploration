@@ -30,7 +30,6 @@ spec:
       transaction_date,
       SUM({{basis.column}}) AS total_amount
     FROM analytics.marts.fct_fund_transactions t
-    WHERE is_test_account = false
     GROUP BY ALL
 
   output_columns:

@@ -1,0 +1,173 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+from app.graph.entity_catalog import load_entity_catalog
+from app.sql_gen.lookup_assembler import build_entity_lookup_sql, lookup_sql_hash
+from app.warehouse.snowflake_client import SnowflakeClient
+
+
+@dataclass
+class EntityResolutionResult:
+    resolutions: list[dict[str, Any]] = field(default_factory=list)
+    filters: list[dict[str, Any]] = field(default_factory=list)
+    resolution_sql: list[str] = field(default_factory=list)
+    resolution_sql_hashes: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "resolutions": self.resolutions,
+            "filters": self.filters,
+            "resolution_sql": self.resolution_sql,
+            "resolution_sql_hashes": self.resolution_sql_hashes,
+        }
+
+
+class EntityResolver:
+    def __init__(self, warehouse: SnowflakeClient | None = None) -> None:
+        self.warehouse = warehouse or SnowflakeClient()
+
+    def resolve(
+        self,
+        mentions: list[dict[str, Any]],
+        entity_catalog: list[dict[str, Any]],
+        data_sources: list[dict[str, Any]],
+        joins: list[dict[str, Any]] | None = None,
+    ) -> EntityResolutionResult:
+        result = EntityResolutionResult()
+        ds_index = {ds["id"]: ds for ds in data_sources}
+        entity_index = {e["id"]: e for e in entity_catalog}
+        correlation: dict[str, Any] = {}
+
+        for mention in mentions:
+            entity_type = mention.get("entity_type")
+            if not entity_type:
+                continue
+            entity = entity_index.get(entity_type)
+            if not entity or not entity.get("resolves_via"):
+                continue
+
+            resolves = entity["resolves_via"]
+            ds = ds_index.get(resolves["data_source"])
+            if not ds:
+                result.resolutions.append(
+                    {
+                        "mention_text": mention.get("text"),
+                        "entity_type": entity_type,
+                        "status": "error",
+                        "message": f"data source {resolves['data_source']!r} not found",
+                    }
+                )
+                continue
+
+            subtype = mention.get("subtype")
+            text = mention.get("text", "")
+
+            if subtype and self._is_direct_subtype(entity, subtype):
+                filter_entry = {
+                    "column": resolves["key_column"],
+                    "operator": "=",
+                    "value": subtype,
+                    "source_entity": entity_type,
+                    "resolved_label": subtype,
+                }
+                result.filters.append(filter_entry)
+                correlation[entity_type] = subtype
+                result.resolutions.append(
+                    {
+                        "mention_text": text,
+                        "entity_type": entity_type,
+                        "status": "resolved",
+                        "key_column": resolves["key_column"],
+                        "key_value": subtype,
+                        "label_value": subtype,
+                        "resolution_method": "subtype",
+                    }
+                )
+                continue
+
+            lookup_sql = build_entity_lookup_sql(
+                entity,
+                ds,
+                text,
+                subtype=subtype,
+                correlation_filters=correlation,
+                joins=joins,
+            )
+            result.resolution_sql.append(lookup_sql)
+            result.resolution_sql_hashes.append(lookup_sql_hash(lookup_sql))
+
+            rows, _ = self._execute_lookup(lookup_sql)
+            if len(rows) == 0:
+                result.resolutions.append(
+                    {
+                        "mention_text": text,
+                        "entity_type": entity_type,
+                        "status": "not_found",
+                        "lookup_sql_hash": lookup_sql_hash(lookup_sql),
+                    }
+                )
+                continue
+            if len(rows) > 1:
+                result.resolutions.append(
+                    {
+                        "mention_text": text,
+                        "entity_type": entity_type,
+                        "status": "ambiguous",
+                        "candidates": rows,
+                        "lookup_sql_hash": lookup_sql_hash(lookup_sql),
+                    }
+                )
+                continue
+
+            row = rows[0]
+            key_value = row.get("RESOLVED_KEY") or row.get("resolved_key")
+            label_value = row.get("RESOLVED_LABEL") or row.get("resolved_label")
+            filter_entry = {
+                "column": resolves["key_column"],
+                "operator": "=",
+                "value": key_value,
+                "source_entity": entity_type,
+                "resolved_label": label_value,
+            }
+            result.filters.append(filter_entry)
+            correlation[entity_type] = key_value
+            result.resolutions.append(
+                {
+                    "mention_text": text,
+                    "entity_type": entity_type,
+                    "status": "resolved",
+                    "key_column": resolves["key_column"],
+                    "key_value": key_value,
+                    "label_value": label_value,
+                    "lookup_sql_hash": lookup_sql_hash(lookup_sql),
+                }
+            )
+
+        return result
+
+    def _execute_lookup(self, sql: str) -> tuple[list[dict[str, Any]], list[str]]:
+        if not self.warehouse.is_configured:
+            return [], []
+        try:
+            return self.warehouse.execute(sql)
+        except RuntimeError:
+            return [], []
+
+    @staticmethod
+    def _is_direct_subtype(entity: dict[str, Any], subtype: str) -> bool:
+        for attr in entity.get("attributes") or []:
+            values = attr.get("values") or []
+            if subtype in values:
+                return True
+        return False
+
+
+def build_mentions_from_intent(intent: dict[str, Any]) -> list[dict[str, Any]]:
+    mentions = intent.get("mentions") or []
+    if mentions:
+        return mentions
+
+    legacy_entities = intent.get("entities") or []
+    return [{"text": text, "entity_type": None, "role": "filter"} for text in legacy_entities]

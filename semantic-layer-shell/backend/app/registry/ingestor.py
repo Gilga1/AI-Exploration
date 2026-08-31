@@ -15,6 +15,7 @@ from app.registry.models import (
     MetricDocument,
     RegistryDocument,
     StagedRegistry,
+    ValidationPolicyDocument,
 )
 
 
@@ -111,6 +112,9 @@ class RegistryIngestor:
                             "location": doc.spec.location,
                             "grain": doc.spec.grain,
                             "grain_keys": doc.spec.grain_keys,
+                            "global_filters": json.dumps(
+                                [gf.model_dump(exclude_none=True) for gf in doc.spec.global_filters]
+                            ),
                         },
                     },
                 )
@@ -229,6 +233,7 @@ class RegistryIngestor:
                             "dimensions": doc.spec.dimensions,
                             "time_key": doc.spec.time_key,
                             "business_rules": doc.spec.business_rules,
+                            "validation_policy": doc.spec.validation_policy,
                             "owner": doc.metadata.owner,
                             "status": doc.metadata.status,
                             "tags": doc.metadata.tags,
@@ -271,6 +276,7 @@ class RegistryIngestor:
 
         elif isinstance(doc, EntityDocument):
             text = f"{doc.metadata.name} {doc.metadata.description} {' '.join(doc.metadata.synonyms)}"
+            spec = doc.spec
             statements.append(
                 (
                     """
@@ -285,15 +291,84 @@ class RegistryIngestor:
                         "version_id": version_id,
                         "props": {
                             "name": doc.metadata.name,
+                            "description": doc.metadata.description,
                             "definition": doc.metadata.description,
                             "definition_embedding": _embedding_for(text, self.embedding_dimensions),
                             "synonyms": doc.metadata.synonyms,
                             "owner": doc.metadata.owner,
                             "status": doc.metadata.status,
+                            "attributes": json.dumps(
+                                [a.model_dump() for a in spec.attributes]
+                            ),
+                            "resolves_via": json.dumps(
+                                spec.resolves_via.model_dump() if spec.resolves_via else None
+                            ),
+                            "correlate_with": json.dumps(spec.correlate_with),
+                            "filter_targets": json.dumps(
+                                [ft.model_dump() for ft in spec.filter_targets]
+                            ),
                         },
                     },
                 )
             )
+            if spec.resolves_via:
+                statements.append(
+                    (
+                        """
+                        MATCH (e:Entity {id: $entity_id}), (d:DataSource {id: $source_id})
+                        MERGE (e)-[r:RESOLVES_VIA]->(d)
+                        SET r += $props
+                        """,
+                        {
+                            "entity_id": doc.metadata.id,
+                            "source_id": spec.resolves_via.data_source,
+                            "props": {
+                                "label_column": spec.resolves_via.label_column,
+                                "key_column": spec.resolves_via.key_column,
+                                "match": spec.resolves_via.match,
+                                "limit": spec.resolves_via.limit,
+                            },
+                        },
+                    )
+                )
+
+        elif isinstance(doc, ValidationPolicyDocument):
+            statements.append(
+                (
+                    """
+                    MERGE (p:ValidationPolicy {id: $id})
+                    SET p += $props
+                    WITH p
+                    MATCH (v:GraphVersion {id: $version_id})
+                    MERGE (p)-[:VERSION_OF]->(v)
+                    """,
+                    {
+                        "id": doc.metadata.id,
+                        "version_id": version_id,
+                        "props": {
+                            "name": doc.metadata.name,
+                            "description": doc.metadata.description,
+                            "rules": json.dumps(doc.spec.rules),
+                            "confidence_aggregation": doc.spec.confidence_aggregation,
+                            "applies_to": json.dumps(doc.spec.applies_to),
+                        },
+                    },
+                )
+            )
+            for target in doc.spec.applies_to:
+                ref = target.get("ref")
+                kind = target.get("kind", "metric")
+                if not ref or kind != "metric":
+                    continue
+                statements.append(
+                    (
+                        """
+                        MATCH (m:Metric {id: $metric_id}), (p:ValidationPolicy {id: $policy_id})
+                        MERGE (m)-[:HAS_VALIDATION_POLICY]->(p)
+                        """,
+                        {"metric_id": ref, "policy_id": doc.metadata.id},
+                    )
+                )
 
         return statements
 

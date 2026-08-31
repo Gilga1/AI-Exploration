@@ -40,6 +40,11 @@ spec:
       role: filter
       exposed: false
 
+  global_filters:
+    - column: is_test_account
+      operator: "="
+      value: false
+
   joins:
     - target: dim_fund
       "on": "fund_id = fund_id"
