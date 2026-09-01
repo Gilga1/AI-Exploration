@@ -1,16 +1,18 @@
 services:
   postgres:
     image: postgres:16
+    env_file:
+      - .env
     environment:
-      POSTGRES_DB: agentic_rag_eval
-      POSTGRES_USER: agentic_rag
-      POSTGRES_PASSWORD: agentic_rag_dev
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U agentic_rag -d agentic_rag_eval"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -23,13 +25,36 @@ services:
     ports:
       - "4317:4317"
       - "4318:4318"
+      - "13133:13133"
     healthcheck:
-      # The official Collector image is `scratch`-based, so use its binary
-      # directly rather than relying on shell tools such as wget or curl.
-      test: ["CMD", "/otelcol-contrib", "--version"]
+      test: ["CMD", "/otelcol-contrib", "validate", "--config=/etc/otelcol-contrib/config.yaml"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  backend:
+    build:
+      context: ../backend
+    env_file:
+      - .env
+    environment:
+      APP_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      APP_OTEL_EXPORTER_OTLP_ENDPOINT: ${APP_OTEL_EXPORTER_OTLP_ENDPOINT}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      APP_LLM_MODEL: ${APP_LLM_MODEL}
+      APP_LLM_BASE_URL: ${APP_LLM_BASE_URL}
+      APP_LLM_PROVIDER: ${APP_LLM_PROVIDER}
+      APP_API_KEY: ${APP_API_KEY}
+      APP_AUTH_DISABLED: ${APP_AUTH_DISABLED}
+      APP_CORS_ALLOW_ORIGINS: ${APP_CORS_ALLOW_ORIGINS}
+      APP_EVAL_SAMPLING_RATE: ${APP_EVAL_SAMPLING_RATE}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_healthy
 
 volumes:
   postgres_data:

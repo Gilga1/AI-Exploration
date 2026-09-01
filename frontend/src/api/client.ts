@@ -14,12 +14,33 @@ export interface EvaluationScorecard {
   metrics: ScoreMetric[];
 }
 
+export interface MetricAlert {
+  metric: string;
+  avg_score: number;
+  threshold: number;
+  cases_scored: number;
+  window_hours?: number;
+  webhook_delivered?: boolean;
+}
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+const apiKey = import.meta.env.VITE_API_KEY?.trim();
+
+function buildHeaders(init?: RequestInit): HeadersInit {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(init?.headers as Record<string, string> | undefined),
+  };
+  if (apiKey) {
+    headers["X-API-Key"] = apiKey;
+  }
+  return headers;
+}
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: buildHeaders(init),
   });
 
   if (!response.ok) {
@@ -87,6 +108,7 @@ export interface RagMetrics {
   summary: RagMetricSummary[];
   total_traces_scored: number;
   per_trace?: RagMetricTraceRow[];
+  alerts?: MetricAlert[];
 }
 
 export function getRagMetrics(perTrace = false): Promise<RagMetrics> {
@@ -105,7 +127,7 @@ export interface AgentRunRow {
   tool_correctness: number | null;
   task_success: boolean;
   loop_efficiency: number | null;
-  classification: "efficient" | "thrashing";
+  classification: "efficient" | "thrashing" | "unknown";
 }
 
 export interface AgentMetrics {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from threading import RLock
@@ -9,7 +10,7 @@ from time import perf_counter
 from typing import Any
 from uuid import UUID, uuid4
 
-from app.core.telemetry import get_tracer, telemetry_uses_otlp_exporter
+from app.core.telemetry import get_tracer
 from app.telemetry.semantic_conventions import (
     attribute_value,
     input_attributes,
@@ -32,6 +33,8 @@ try:
 except ImportError:  # pragma: no cover - local persistence still works without SDK extras
     trace = None  # type: ignore[assignment]
     Status = StatusCode = None  # type: ignore[assignment,misc]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -64,6 +67,7 @@ class LangChainOTelCallbackHandler(BaseCallbackHandler):
         self._tracer = get_tracer("app.telemetry.langchain")
         self._active: dict[str, _ActiveSpan] = {}
         self._lock = RLock()
+        self._last_completed_trace_id: str | None = None
 
     def new_run_id(self) -> UUID:
         """Mint a fresh run id for callers driving the handler manually."""
@@ -71,12 +75,17 @@ class LangChainOTelCallbackHandler(BaseCallbackHandler):
         return uuid4()
 
     def last_trace_id(self, run_key: str) -> str | None:
-        """Trace id of an open span (H1/H2 fix): lets the invocation capture
-        its own trace identity instead of guessing "newest row" afterwards."""
+        """Trace id of an open span for the given run key."""
 
         with self._lock:
             active = self._active.get(run_key)
         return active.trace_id if active else None
+
+    def last_completed_trace_id(self) -> str | None:
+        """Most recently persisted trace id (set when a root span closes)."""
+
+        with self._lock:
+            return self._last_completed_trace_id
 
     def on_chain_start(
         self,
@@ -221,30 +230,34 @@ class LangChainOTelCallbackHandler(BaseCallbackHandler):
                     active.span.set_status(Status(StatusCode.OK))
                 active.span.end()
             except Exception:
-                # Export failures are intentionally isolated from the RAG request.
-                pass
+                logger.warning("Failed to end OTel span for run %s", run_id, exc_info=True)
 
-        if not telemetry_uses_otlp_exporter():
-            try:
-                from app.db.session import persist_completed_span
+        try:
+            from app.db.session import persist_completed_span
 
-                persist_completed_span(
-                    trace_id=active.trace_id,
-                    span_id=active.span_id,
-                    parent_span_id=active.parent_span_id,
-                    name=active.name,
-                    kind=active.kind,
-                    start_time=active.started_at,
-                    end_time=ended_at,
-                    duration_ms=duration_ms,
-                    status=status,
-                    attributes=active.attributes,
-                    is_root=active.parent_span_id is None,
-                )
-            except Exception:
-                # Local persistence is a dev-mode observability aid and should
-                # never change the chain's user-visible result.
-                pass
+            persist_completed_span(
+                trace_id=active.trace_id,
+                span_id=active.span_id,
+                parent_span_id=active.parent_span_id,
+                name=active.name,
+                kind=active.kind,
+                start_time=active.started_at,
+                end_time=ended_at,
+                duration_ms=duration_ms,
+                status=status,
+                attributes=active.attributes,
+                is_root=active.parent_span_id is None,
+            )
+            if active.parent_span_id is None:
+                with self._lock:
+                    self._last_completed_trace_id = active.trace_id
+        except Exception:
+            logger.warning(
+                "Failed to persist completed span %s for trace %s",
+                active.span_id,
+                active.trace_id,
+                exc_info=True,
+            )
 
     def _start_otel_span(self, name: str, parent: _ActiveSpan | None) -> Any | None:
         if self._tracer is None:

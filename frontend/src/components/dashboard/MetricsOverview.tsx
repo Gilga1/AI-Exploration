@@ -10,29 +10,39 @@ const scoreColor = (score: number | null) => {
   return "bg-rose-400";
 };
 
-export function MetricsOverview() {
-  const [metrics, setMetrics] = useState<RagMetrics>();
-  const [error, setError] = useState<string>();
+interface MetricsOverviewProps {
+  metrics?: RagMetrics;
+  error?: string;
+  loading?: boolean;
+}
 
-  useEffect(() => {
-    apiRequest<RagMetrics>("/api/v1/metrics/rag")
-      .then(setMetrics)
-      .catch((e) =>
-        setError(e instanceof Error ? e.message : "Failed to load metrics"),
-      );
-  }, []);
-
-  if (error)
+export function MetricsOverview({ metrics, error, loading }: MetricsOverviewProps) {
+  if (error) {
     return (
       <p className="rounded-md bg-rose-400/10 p-3 text-sm text-rose-200">
         {error}
       </p>
     );
-  if (!metrics)
+  }
+  if (loading || !metrics) {
     return <p className="text-sm text-slate-500">Loading metrics…</p>;
+  }
 
   return (
     <div className="space-y-4">
+      {metrics.alerts && metrics.alerts.length > 0 ? (
+        <div className="space-y-2 rounded-lg border border-rose-500/40 bg-rose-500/10 p-4">
+          <div className="text-sm font-medium text-rose-100">Active alerts</div>
+          {metrics.alerts.map((alert) => (
+            <p key={alert.metric} className="text-sm text-rose-100/90">
+              {alert.metric} averaged {alert.avg_score.toFixed(2)} over{" "}
+              {alert.cases_scored} traces (threshold {alert.threshold.toFixed(2)}
+              {alert.window_hours ? `, last ${alert.window_hours}h` : ""})
+            </p>
+          ))}
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {metrics.summary.map((metric) => (
           <div
@@ -69,15 +79,19 @@ export function MetricsOverview() {
   );
 }
 
-export function RagMetricsPanel() {
-  const [metrics, setMetrics] = useState<RagMetrics>();
+interface RagMetricsPanelProps {
+  metrics?: RagMetrics;
+  panelError?: string;
+}
 
-  useEffect(() => {
-    apiRequest<RagMetrics>("/api/v1/metrics/rag?per_trace=true")
-      .then(setMetrics)
-      .catch(() => {});
-  }, []);
-
+export function RagMetricsPanel({ metrics, panelError }: RagMetricsPanelProps) {
+  if (panelError) {
+    return (
+      <p className="rounded-md bg-rose-400/10 p-3 text-sm text-rose-200">
+        {panelError}
+      </p>
+    );
+  }
   if (!metrics?.per_trace?.length) return null;
 
   return (
@@ -117,7 +131,9 @@ export function RagMetricsPanel() {
                       ? "bg-emerald-400/10 text-emerald-300"
                       : row.status === "failed"
                         ? "bg-rose-400/10 text-rose-300"
-                        : "bg-slate-700 text-slate-300"
+                        : row.status === "partial"
+                          ? "bg-amber-400/10 text-amber-300"
+                          : "bg-slate-700 text-slate-300"
                   }`}
                 >
                   {row.status}
@@ -129,4 +145,19 @@ export function RagMetricsPanel() {
       </table>
     </div>
   );
+}
+
+export function useRagMetrics() {
+  const [metrics, setMetrics] = useState<RagMetrics>();
+  const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    apiRequest<RagMetrics>("/api/v1/metrics/rag?per_trace=true")
+      .then(setMetrics)
+      .catch((e) =>
+        setError(e instanceof Error ? e.message : "Failed to load metrics"),
+      );
+  }, []);
+
+  return { metrics, error, loading: !metrics && !error };
 }

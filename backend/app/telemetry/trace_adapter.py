@@ -48,8 +48,9 @@ def _first_span(spans: list[Span], kind: str) -> Span | None:
 
 
 def _root_input(spans: list[Span]) -> str | None:
-    root = min(
-        (span for span in spans),
+    root_candidates = [span for span in spans if span.parent_span_id is None]
+    root = root_candidates[0] if root_candidates else min(
+        spans,
         key=lambda span: span.start_time,
         default=None,
     )

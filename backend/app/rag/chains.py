@@ -1,27 +1,22 @@
-"""The Phase 1 single-shot retrieve → generate RAG chain.
-
-There is intentionally no agent state or loop in this module.  When LangChain
-is installed, execution is wrapped in a ``RunnableLambda`` so callers use the
-same ``invoke`` contract as later LangChain/LangGraph phases.  The module still
-boots without it, which keeps the Phase 1 demo usable in an air-gapped setup.
-"""
+"""The Phase 1 single-shot retrieve → generate RAG chain."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any
 from uuid import UUID, uuid4
 
 from app.core.config import Settings, get_settings
+from app.core.llm import ChatModel, get_chat_model
 from app.rag.corpus import CORPUS
 from app.rag.embeddings import get_embedding_model
 from app.rag.retriever import RagRetriever
-from app.rag.vectorstore import InMemoryVectorStore, RagDocument
+from app.rag.vectorstore import InMemoryVectorStore
 from app.telemetry.callback_bridge import LangChainOTelCallbackHandler
 
-try:  # LangChain is optional at import time for the offline fallback.
+try:
     from langchain_core.runnables import RunnableLambda
-except ImportError:  # pragma: no cover - exercised only before dependencies install
+except ImportError:
     RunnableLambda = None  # type: ignore[assignment,misc]
 
 
@@ -34,56 +29,7 @@ class RAGResult:
     contexts: list[str]
     source_ids: list[str]
     llm_provider: str
-
-
-class ChatModel(Protocol):
-    provider_name: str
-
-    def invoke(self, prompt: str) -> Any: ...
-
-
-class OpenAIChatModel:
-    """Adapter giving ChatOpenAI the ``provider_name`` the harness protocol expects."""
-
-    provider_name = "openai"
-
-    def __init__(self, inner: Any) -> None:
-        self._inner = inner
-
-    def invoke(self, prompt: str) -> Any:
-        return self._inner.invoke(prompt)
-
-
-def get_chat_model(settings: Settings) -> ChatModel:
-    """Return the LLM-backed chat model; fail fast when no key is set.
-
-    The harness is intentionally LLM-driven end to end — there is no offline
-    stub fallback. A missing ``OPENAI_API_KEY`` is a configuration error so
-    misconfigured deployments surface at startup instead of silently scoring
-    against canned answers.
-    """
-
-    if not settings.openai_api_key:
-        raise RuntimeError(
-            "OPENAI_API_KEY (APP_OPENAI_API_KEY) is not configured. This harness "
-            "is fully LLM-driven: set it in backend/.env before starting."
-        )
-
-    try:  # pragma: no cover - needs an explicitly configured external service
-        from langchain_openai import ChatOpenAI
-    except ImportError as exc:  # pragma: no cover
-        raise RuntimeError(
-            "OPENAI_API_KEY is configured but langchain-openai is missing. "
-            "Install the 'openai' optional dependency: pip install -e '.[openai]'"
-        ) from exc
-
-    return OpenAIChatModel(
-        ChatOpenAI(
-            model=settings.llm_model,
-            api_key=settings.openai_api_key,
-            temperature=0,
-        )
-    )
+    trace_id: str | None = None
 
 
 class SingleShotRAGChain:
@@ -97,15 +43,10 @@ class SingleShotRAGChain:
     ) -> None:
         self.retriever = retriever
         self.chat_model = chat_model
-        # The bridge is deliberately attached to this simple Phase 1 chain. It
-        # gives the eventual agent loop no special treatment and keeps the
-        # LangChain/OTel integration isolated in one callback implementation.
         self.callback_handler = callback_handler or LangChainOTelCallbackHandler()
         self._runnable = RunnableLambda(self._run_with_trace) if RunnableLambda else None
 
     def invoke(self, question: str) -> RAGResult:
-        """Execute the LangChain-wrapped single-shot RAG flow."""
-
         if not question or not question.strip():
             raise ValueError("question must not be empty")
         if self._runnable is not None:
@@ -113,8 +54,6 @@ class SingleShotRAGChain:
         return self._run_with_trace(question)
 
     def _run_with_trace(self, question: str) -> RAGResult:
-        """Execute the fixed chain while emitting chain/retriever/LLM spans."""
-
         chain_run_id = uuid4()
         self.callback_handler.on_chain_start(
             {"name": "phase-1.retrieve-generate"},
@@ -134,7 +73,17 @@ class SingleShotRAGChain:
             },
             run_id=chain_run_id,
         )
-        return result
+        trace_id = self.callback_handler.last_trace_id(str(chain_run_id))
+        if trace_id is None:
+            trace_id = self.callback_handler.last_completed_trace_id()
+        return RAGResult(
+            question=result.question,
+            answer=result.answer,
+            contexts=result.contexts,
+            source_ids=result.source_ids,
+            llm_provider=result.llm_provider,
+            trace_id=trace_id,
+        )
 
     def _run_once(self, question: str, chain_run_id: UUID) -> RAGResult:
         retriever_run_id = uuid4()
@@ -200,7 +149,10 @@ class SingleShotRAGChain:
         return str(content).strip()
 
 
-def build_phase_one_chain(settings: Settings | None = None) -> SingleShotRAGChain:
+def build_phase_one_chain(
+    settings: Settings | None = None,
+    callback_handler: LangChainOTelCallbackHandler | None = None,
+) -> SingleShotRAGChain:
     """Build the fixed-corpus Phase 1 chain from application settings."""
 
     resolved_settings = settings or get_settings()
@@ -211,5 +163,5 @@ def build_phase_one_chain(settings: Settings | None = None) -> SingleShotRAGChai
     return SingleShotRAGChain(
         retriever,
         get_chat_model(resolved_settings),
-        callback_handler=LangChainOTelCallbackHandler(),
+        callback_handler=callback_handler or LangChainOTelCallbackHandler(),
     )

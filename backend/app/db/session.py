@@ -1,12 +1,8 @@
-"""Database setup and local completed-span persistence.
-
-When no OTel Collector endpoint is configured the callback bridge uses this
-small consumer directly.  It intentionally writes only completed spans, which
-keeps the hot path compact and avoids exposing half-finished trace records.
-"""
+"""Database setup and local completed-span persistence."""
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 from contextlib import contextmanager
@@ -21,16 +17,16 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.config import get_settings
 from app.db.models import Base, Span, Trace
 
+logger = logging.getLogger(__name__)
+
 
 def get_database_url() -> str:
-    """Use an explicit database URL or a repository-local SQLite dev store."""
+    """Resolve the configured database URL for SQLAlchemy."""
 
     configured = os.getenv("DATABASE_URL") or get_settings().database_url
-    if not configured:
-        return "sqlite:///./traces.db"
     if configured.startswith("postgres://"):
         return configured.replace("postgres://", "postgresql+psycopg://", 1)
-    if configured.startswith("postgresql://"):
+    if configured.startswith("postgresql://") and "+psycopg" not in configured:
         return configured.replace("postgresql://", "postgresql+psycopg://", 1)
     return configured
 
@@ -41,10 +37,6 @@ def get_engine() -> Engine:
 
     url = get_database_url()
     is_sqlite = url.startswith("sqlite")
-    # SQLite: allow cross-thread reuse and tolerate brief write contention
-    # from FastAPI's threadpool / background eval tasks (L2 fix). Without a
-    # busy timeout, concurrent spans are silently dropped by callers that
-    # swallow persistence errors.
     connect_args: dict[str, Any] = (
         {"check_same_thread": False, "timeout": 30} if is_sqlite else {}
     )
@@ -76,8 +68,7 @@ _init_done = False
 
 
 def init_db() -> None:
-    """Create tables once per process (L2 fix: create_all on every span caused
-    concurrent lock-upgrade deadlocks on SQLite)."""
+    """Create tables once per process."""
 
     global _init_done
     if _init_done:

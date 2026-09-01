@@ -8,10 +8,10 @@ An **LLM-driven** evaluation harness for agentic RAG systems. The architecture k
 
 ## Key characteristics
 
-- **Fully LLM-driven**: generation and judging require `OPENAI_API_KEY`. A missing key is a startup error, not a silent fallback to canned answers.
-- **Trace-native**: every agent invocation produces an OpenTelemetry trace with per-invocation identity (safe under concurrent load); traces are scored asynchronously off the hot path.
+- **Fully LLM-driven**: generation and judging require an OpenRouter-compatible API key (`OPENROUTER_API_KEY`). A missing key is a configuration error, not a silent fallback to canned answers.
+- **Trace-native**: every agent invocation produces an OpenTelemetry trace with per-invocation identity (safe under concurrent load); traces are scored asynchronously off the hot path and persisted to Postgres.
 - **Async eval pipeline**: DeepEval judges run as background tasks after the HTTP response is sent; dashboard reads never block on LLM calls.
-- **Production guards**: API-key auth on all mutating/LLM endpoints (`/eval/run`, `/agent/invoke`, `/metrics/*`), threshold alerting via Slack webhook, head-based judge sampling for cost control.
+- **Production guards**: API-key auth on protected routes (`/eval/*`, `/agent/*`, `/metrics/*`, `/traces/*`), threshold alerting via webhook, head-based judge sampling for cost control.
 
 ## Repository layout
 
@@ -26,7 +26,8 @@ An **LLM-driven** evaluation harness for agentic RAG systems. The architecture k
 - Python ≥ 3.11
 - Node.js ≥ 18
 - Docker (optional, for Postgres + OTel Collector)
-- An **OpenAI API key** (required — the harness is fully LLM-driven)
+- An **OpenRouter API key** (required — the harness is fully LLM-driven)
+- **Postgres** (required — configure `APP_DATABASE_URL`)
 
 ## Setup
 
@@ -34,10 +35,11 @@ An **LLM-driven** evaluation harness for agentic RAG systems. The architecture k
 
 ```bash
 cp backend/.env.example backend/.env
-# then edit backend/.env and set APP_OPENAI_API_KEY=sk-...
+cp infra/.env.example infra/.env
+# then edit both files: OPENROUTER_API_KEY, APP_DATABASE_URL, APP_API_KEY, etc.
 ```
 
-All keys are documented in [`backend/.env.example`](./backend/.env.example).
+Also copy [`frontend/.env.example`](./frontend/.env.example) to `frontend/.env.local` when using auth (`VITE_API_KEY`).
 
 ### 2. Run local infrastructure (optional)
 
@@ -45,7 +47,7 @@ All keys are documented in [`backend/.env.example`](./backend/.env.example).
 docker compose -f infra/docker-compose.yml up -d
 ```
 
-Starts Postgres 16 and an OpenTelemetry Collector (OTLP gRPC `4317` / HTTP `4318`) with tail sampling that always keeps error and >2s traces. Without this, the backend persists spans locally to SQLite and still works fully.
+Starts Postgres 16, the backend API, and an OpenTelemetry Collector (OTLP gRPC `4317` / HTTP `4318`). Spans are always persisted to Postgres even when OTLP export is enabled.
 
 ### 3. Backend
 
@@ -56,7 +58,7 @@ python -m venv .venv
 .venv/Scripts/uvicorn app.main:app --reload    # run from backend/ so .env is found
 ```
 
-The app fails fast at first use if `APP_OPENAI_API_KEY` is missing. Health check: `http://127.0.0.1:8000/health`.
+The app fails fast at startup if required env vars are missing (`APP_DATABASE_URL`, `OPENROUTER_API_KEY`, `APP_LLM_MODEL`, `APP_LLM_BASE_URL`). Health check: `http://127.0.0.1:8000/health`.
 
 > ⚠️ On Windows/MSYS shells, native tools need forward-slash paths: `.venv/Scripts/python.exe` works, backslash paths may not.
 
@@ -68,7 +70,7 @@ npm install
 npm run dev
 ```
 
-Dashboard at `http://localhost:5173`. Set `VITE_API_BASE_URL` in `frontend/.env.local` if the backend runs elsewhere.
+Dashboard at `http://localhost:5173`. Configure `VITE_API_BASE_URL` and `VITE_API_KEY` in `frontend/.env.local` when needed.
 
 ## Quick tour
 
@@ -92,7 +94,7 @@ cd backend
 .venv/Scripts/python -m app.evaluation.runners.ci_runner
 ```
 
-CI (`.github/workflows/eval.yml`) runs the same suite on PRs touching `backend/**` when the `OPENAI_API_KEY` repository secret is configured; without it the suite skips safely.
+CI (`.github/workflows/eval.yml`) runs unit tests on every PR and the golden DeepEval suite when the `OPENROUTER_API_KEY` repository secret is configured.
 
 ## Load test
 
