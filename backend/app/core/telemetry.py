@@ -8,6 +8,7 @@ attempting to send them over the network.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -22,6 +23,8 @@ try:
     from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 except ImportError:  # pragma: no cover - permits the minimal API shell to boot
     trace = None  # type: ignore[assignment]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -80,8 +83,7 @@ def configure_telemetry(settings: Settings) -> TelemetryState:
         _telemetry_configured = True
         _telemetry_state = TelemetryState(True, uses_otlp_exporter, exporter_name)
     except Exception:
-        # Observability must never prevent the API from serving an offline RAG
-        # request.  The callback bridge will still use its local no-op spans.
+        logger.warning("Telemetry setup failed", exc_info=True)
         _telemetry_state = TelemetryState(False, False, "unavailable")
 
     return _telemetry_state

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import DateTime, Float, ForeignKey, JSON, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class Base(DeclarativeBase):
@@ -26,7 +30,7 @@ class Trace(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="UNSET")
     attributes: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+        DateTime(timezone=True), nullable=False, default=utcnow
     )
 
     spans: Mapped[list[Span]] = relationship(
@@ -57,9 +61,10 @@ class Span(Base):
 
 
 class EvalResult(Base):
-    """Reserved for Phase 3 asynchronous scores keyed to a captured trace."""
+    """Asynchronous scores keyed to a captured trace."""
 
     __tablename__ = "eval_results"
+    __table_args__ = (UniqueConstraint("trace_id", "metric_name", name="uq_eval_trace_metric"),)
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     trace_id: Mapped[str] = mapped_column(ForeignKey("traces.id"), index=True, nullable=False)
@@ -68,7 +73,16 @@ class EvalResult(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=datetime.utcnow
+        DateTime(timezone=True), nullable=False, default=utcnow
     )
 
     trace: Mapped[Trace] = relationship(back_populates="eval_results")
+
+
+class AlertCooldown(Base):
+    """Shared alert cooldown state across workers."""
+
+    __tablename__ = "alert_cooldowns"
+
+    metric_name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    alerted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
