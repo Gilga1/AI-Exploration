@@ -1,13 +1,3 @@
-"""Regression gate for the golden dataset.
-
-The harness is fully LLM-driven: generation and judging both require
-``OPENAI_API_KEY``. When the key is absent the module skips — safe for
-untrusted/offline CI; when present, every golden case runs against the real
-model and DeepEval judges assert the RAG metric thresholds.
-"""
-
-from __future__ import annotations
-
 import pytest
 
 deepeval = pytest.importorskip("deepeval", reason="DeepEval is an evaluation extra")
@@ -20,7 +10,7 @@ from app.rag.chains import build_phase_one_chain
 
 pytestmark = pytest.mark.skipif(
     not get_settings().has_llm_judge_credentials,
-    reason="Fully LLM-driven harness: set OPENAI_API_KEY to run this suite.",
+    reason="Fully LLM-driven harness: set OPENROUTER_API_KEY to run this suite.",
 )
 
 
@@ -39,11 +29,15 @@ def test_golden_rag_metrics(example: GoldenExample, rag_chain) -> None:
 
 
 def test_missing_key_fails_fast() -> None:
-    """get_chat_model must raise a clear config error when no key is set."""
-
     from app.core.config import Settings
-    from app.rag.chains import get_chat_model
+    from app.core.llm import get_chat_model
 
-    keyless = Settings(openai_api_key=None, _env_file=None)
-    with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+    keyless = Settings(
+        llm_api_key="",
+        llm_model="openai/gpt-4o-mini",
+        llm_base_url="https://openrouter.ai/api/v1",
+        database_url="sqlite:///./test.db",
+        _env_file=None,
+    )
+    with pytest.raises(RuntimeError, match="LLM API key"):
         get_chat_model(keyless)

@@ -1,16 +1,21 @@
-"""Read-only API endpoints for locally persisted Phase 2 OTel traces."""
+"""Read-only API endpoints for locally persisted OTel traces."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 
+from app.core.auth import require_api_key
 from app.db.models import Span, Trace
 from app.db.session import init_db, session_scope
 
-router = APIRouter(prefix="/traces", tags=["traces"])
+router = APIRouter(
+    prefix="/traces",
+    tags=["traces"],
+    dependencies=[Depends(require_api_key)],
+)
 
 
 def _isoformat(value: Any) -> str | None:
@@ -46,8 +51,6 @@ def _span_payload(span_record: Span) -> dict[str, Any]:
 
 @router.get("")
 def list_traces(limit: int = 50) -> list[dict[str, Any]]:
-    """Return most recently started traces, capped to protect the dashboard."""
-
     init_db()
     clamped_limit = max(1, min(limit, 200))
     with session_scope() as session:
@@ -59,8 +62,6 @@ def list_traces(limit: int = 50) -> list[dict[str, Any]]:
 
 @router.get("/{trace_id}")
 def get_trace(trace_id: str) -> dict[str, Any]:
-    """Return a trace plus all of its completed spans in chronological order."""
-
     init_db()
     with session_scope() as session:
         trace_record = session.get(Trace, trace_id)

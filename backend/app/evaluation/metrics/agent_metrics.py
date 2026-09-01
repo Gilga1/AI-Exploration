@@ -1,29 +1,29 @@
-"""Phase 5 agent metrics: ToolCorrectness, TaskCompletion, LoopEfficiency.
-
-ToolCorrectness is deterministic set comparison. TaskCompletion uses DeepEval's
-GEval when a judge LLM is configured; LoopEfficiency is a custom GEval variant
-penalising iterations beyond an expected budget. Both degrade to deterministic
-heuristics offline so CI stays free and green.
-"""
+"""Phase 5 agent metrics: ToolCorrectness, TaskCompletion, LoopEfficiency."""
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.telemetry.trace_adapter import ReconstructedCase
+
+logger = logging.getLogger(__name__)
 
 
 def tool_correctness(case: ReconstructedCase, expected_tools: list[str] | None = None) -> dict[str, Any]:
     """1.0 when the tools actually called match the expected set exactly."""
 
     if expected_tools is None:
-        # No expectation declared: correctness means "no spurious tool calls"
-        # for pure-RAG traces and "at least one sensible call" for agent ones.
+        expected_tools = []
+
+    if not expected_tools:
+        score = 1.0 if not case.tools_called else 0.0
         return {
-            "score": 1.0 if (case.tools_called or not case.is_agent_trace) else 0.0,
-            "status": "passed",
-            "reasoning": f"tools called: {case.tools_called or 'none'}",
+            "score": score,
+            "status": "passed" if score >= 0.99 else "failed",
+            "reasoning": f"no tools expected; called {case.tools_called or 'none'}",
         }
+
     actual_set, expected_set = set(case.tools_called), set(expected_tools)
     score = 1.0 if actual_set == expected_set else (
         len(actual_set & expected_set) / len(actual_set | expected_set)
@@ -36,8 +36,6 @@ def tool_correctness(case: ReconstructedCase, expected_tools: list[str] | None =
 
 
 def task_completion_deterministic(case: ReconstructedCase) -> dict[str, Any]:
-    """Offline heuristic: an answer exists and is non-trivially long."""
-
     answer = case.actual_output or ""
     ok = len(answer.split()) >= 3
     return {
@@ -64,16 +62,11 @@ def loop_efficiency(
     expected_max_iterations: int = 3,
     settings=None,
 ) -> dict[str, Any]:
-    """Penalise loop iterations beyond the optimal/expected count.
-
-    With a judge LLM configured this runs as a custom GEval over the trace
-    narrative; offline it reduces to a deterministic iteration-count penalty.
-    """
-
     iterations = case.iterations if case.iterations is not None else 1
-    has_judge = bool((settings or __import__(
-        "app.core.config", fromlist=["get_settings"]
-    ).get_settings()).has_llm_judge_credentials)
+    from app.core.config import get_settings
+
+    resolved = settings or get_settings()
+    has_judge = bool(resolved.has_llm_judge_credentials)
 
     if has_judge and _geval_available():
         try:
@@ -106,8 +99,8 @@ def loop_efficiency(
                     "status": "passed" if metric.success else "failed",
                     "reasoning": getattr(metric, "reason", None),
                 }
-        except Exception:
-            pass  # Fall through to the deterministic penalty.
+        except Exception as exc:
+            logger.warning("LoopEfficiency GEval failed: %s", exc, exc_info=True)
 
     excess = max(0, iterations - expected_max_iterations)
     score = max(0.0, 1.0 - 0.25 * excess)
@@ -127,17 +120,13 @@ def run_agent_metrics(
     expected_max_iterations: int = 3,
     settings=None,
 ) -> list[dict[str, Any]]:
-    """Score one agent-produced trace with all three agent metrics."""
-
     completion = task_completion_deterministic(case)
 
-    # Upgrade TaskCompletion to GEval when a judge LLM is available.
     from app.core.config import get_settings
 
     resolved = settings or get_settings()
     if resolved.has_llm_judge_credentials and _geval_available() and case.actual_output:
         try:
-            from deepeval.evaluate import execute_test_cases  # noqa: F401  (availability probe)
             from deepeval.metrics import GEval
             from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 
@@ -158,8 +147,8 @@ def run_agent_metrics(
                     "status": "passed" if metric.success else "failed",
                     "reasoning": getattr(metric, "reason", None),
                 }
-        except Exception:
-            pass  # Keep the deterministic fallback.
+        except Exception as exc:
+            logger.warning("TaskCompletion GEval failed: %s", exc, exc_info=True)
 
     return [
         {"metric_name": "ToolCorrectness", **tool_correctness(case, expected_tools)},

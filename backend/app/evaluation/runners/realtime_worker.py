@@ -1,63 +1,60 @@
-"""Async eval worker: score completed traces without touching the hot path.
-
-In dev this runs as a FastAPI BackgroundTask right after the response is sent.
-In production the same ``score_trace`` entrypoint can be consumed from a Celery
-worker or a queue consumer — the function only needs ``(trace_id)``.
-"""
+"""Async eval worker: score completed traces without touching the hot path."""
 
 from __future__ import annotations
 
+import hashlib
 import logging
-import random
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import get_settings
+from app.core.llm import configure_llm_environment
 from app.db.models import EvalResult, Span, Trace
 from app.db.session import session_scope
+from app.evaluation.expectations import expected_answer_for_question, expected_for_question
 from app.telemetry.trace_adapter import ReconstructedCase, reconstruct_test_case
-
-# Expected tool sequences for the Phase 5 agent golden scenarios (keyed by
-# lowercase substring of the question). None means "no tools expected".
-AGENT_EXPECTATIONS: tuple[tuple[str, list[str] | None, int], ...] = (
-    ("calculate", ["calculator"], 2),
-    ("look up", ["document_lookup"], 3),
-    ("lookup", ["document_lookup"], 3),
-)
-
-
-def expected_for_question(question: str) -> tuple[list[str] | None, int]:
-    """Return (expected_tools, max_iterations) for known agent scenarios."""
-
-    lowered = question.lower()
-    for needle, tools, max_iter in AGENT_EXPECTATIONS:
-        if needle in lowered:
-            return tools, max_iter
-    return None, 3
 
 logger = logging.getLogger(__name__)
 
+RAG_METRIC_NAMES = (
+    "Faithfulness",
+    "ContextualPrecision",
+    "ContextualRecall",
+    "Hallucination",
+)
+AGENT_METRIC_NAMES = ("ToolCorrectness", "TaskCompletion", "LoopEfficiency")
+
 
 def should_sample(trace_id: str, rate: float | None = None) -> bool:
-    """Deterministic per-trace sampling so retries do not double-score."""
-
     resolved = rate if rate is not None else get_settings().eval_sampling_rate
     if resolved >= 1.0:
         return True
     if resolved <= 0.0:
         return False
-    # First 8 hex chars of the trace id give a stable 0..1 value in [0,1).
     try:
         stable = int(trace_id[:8], 16) / float(0xFFFFFFFF)
     except ValueError:
-        stable = random.random()
+        digest = hashlib.sha256(trace_id.encode("utf-8")).hexdigest()
+        stable = int(digest[:8], 16) / float(0xFFFFFFFF)
     return stable < resolved
 
 
-def _run_rag_judges(case: Any) -> list[dict[str, Any]]:
-    """Score one reconstructed case with the Phase 1 DeepEval metrics."""
+def _expected_metric_names(case: ReconstructedCase, settings) -> set[str]:
+    names = set(RAG_METRIC_NAMES) if case.actual_output is not None else set()
+    if case.is_agent_trace:
+        names.update(AGENT_METRIC_NAMES)
+    if not settings.has_llm_judge_credentials:
+        return set()
+    if case.actual_output is None:
+        return set()
+    if not case.retrieval_context and not case.is_agent_trace:
+        return names & set(AGENT_METRIC_NAMES)
+    return names
 
+
+def _run_rag_judges(case: Any, expected_output: str | None) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     from deepeval.metrics import (
         ContextualPrecisionMetric,
@@ -70,7 +67,8 @@ def _run_rag_judges(case: Any) -> list[dict[str, Any]]:
     test_case = LLMTestCase(
         input=case.input,
         actual_output=case.actual_output or "",
-        retrieval_context=case.retrieval_context,
+        expected_output=expected_output,
+        retrieval_context=case.retrieval_context or [],
     )
 
     metric_specs = [
@@ -90,23 +88,27 @@ def _run_rag_judges(case: Any) -> list[dict[str, Any]]:
                     "reasoning": getattr(metric, "reason", None),
                 }
             )
-        except Exception as exc:  # One judge failing must not block the others.
+        except Exception as exc:
             logger.warning("Judge %s failed on trace scoring: %s", name, exc)
-            results.append({"metric_name": name, "score": None, "status": "failed",
-                            "reasoning": f"judge error: {exc}"})
+            results.append(
+                {
+                    "metric_name": name,
+                    "score": None,
+                    "status": "failed",
+                    "reasoning": f"judge error: {exc}",
+                }
+            )
     return results
 
 
-def _skipped_results(reason: str) -> list[dict[str, Any]]:
+def _skipped_results(reason: str, metric_names: set[str]) -> list[dict[str, Any]]:
     return [
         {"metric_name": name, "score": None, "status": "skipped", "reasoning": reason}
-        for name in ("Faithfulness", "ContextualPrecision", "ContextualRecall", "Hallucination")
+        for name in sorted(metric_names)
     ]
 
 
 def _score_agent_case(case: ReconstructedCase, settings=None) -> list[dict[str, Any]]:
-    """Run Phase 5 agent metrics with expectations matched to the question."""
-
     from app.evaluation.metrics.agent_metrics import run_agent_metrics
 
     expected_tools, max_iterations = expected_for_question(case.input)
@@ -118,14 +120,49 @@ def _score_agent_case(case: ReconstructedCase, settings=None) -> list[dict[str, 
     )
 
 
+def _upsert_eval_result(session, trace_id: str, row: dict[str, Any]) -> EvalResult:
+    existing = session.scalar(
+        select(EvalResult).where(
+            EvalResult.trace_id == trace_id,
+            EvalResult.metric_name == row["metric_name"],
+        )
+    )
+    if existing:
+        existing.score = row.get("score")
+        existing.status = row["status"]
+        existing.reasoning = row.get("reasoning")
+        return existing
+
+    result = EvalResult(
+        trace_id=trace_id,
+        metric_name=row["metric_name"],
+        score=row.get("score"),
+        status=row["status"],
+        reasoning=row.get("reasoning"),
+    )
+    session.add(result)
+    try:
+        session.flush()
+    except IntegrityError:
+        session.rollback()
+        existing = session.scalar(
+            select(EvalResult).where(
+                EvalResult.trace_id == trace_id,
+                EvalResult.metric_name == row["metric_name"],
+            )
+        )
+        if existing:
+            existing.score = row.get("score")
+            existing.status = row["status"]
+            existing.reasoning = row.get("reasoning")
+            return existing
+        raise
+    return result
+
+
 def score_trace(trace_id: str, settings=None) -> list[dict[str, Any]]:
-    """Reconstruct and score one trace; persist EvalResults keyed by trace_id.
-
-    Never raises into the caller's request path — errors are logged and recorded
-    as failed EvalResults so dashboards can surface them.
-    """
-
     resolved_settings = settings or get_settings()
+    configure_llm_environment(resolved_settings)
 
     with session_scope() as session:
         trace = session.get(Trace, trace_id)
@@ -133,54 +170,60 @@ def score_trace(trace_id: str, settings=None) -> list[dict[str, Any]]:
             logger.warning("score_trace called for unknown trace %s", trace_id)
             return []
 
-        existing = session.scalars(
-            select(EvalResult).where(EvalResult.trace_id == trace_id)
-        ).all()
-        if existing:
-            return [_result_payload(result) for result in existing]
-
         spans = session.scalars(
             select(Span).where(Span.trace_id == trace_id).order_by(Span.start_time.asc())
         ).all()
         case = reconstruct_test_case(trace_id, spans)
 
-        if case.actual_output is None or not case.retrieval_context:
-            if case.is_agent_trace and case.actual_output is not None:
-                # Agent traces (e.g. pure tool calls) may legitimately have no
-                # retrieval context — score agent metrics on what we have.
-                rows = _score_agent_case(case, resolved_settings)
-            else:
-                rows = _skipped_results("Trace missing answer or retrieval context.")
+        existing_rows = session.scalars(
+            select(EvalResult).where(EvalResult.trace_id == trace_id)
+        ).all()
+        existing_by_name = {row.metric_name: row for row in existing_rows}
+        expected_names = _expected_metric_names(case, resolved_settings)
+        if expected_names and expected_names.issubset(existing_by_name):
+            return [_result_payload(result) for result in existing_rows]
+
+        missing_names = expected_names - set(existing_by_name)
+        if not missing_names and existing_rows:
+            return [_result_payload(result) for result in existing_rows]
+
+        if case.actual_output is None:
+            rows = _skipped_results("Trace missing answer.", expected_names or set(RAG_METRIC_NAMES))
         elif not resolved_settings.has_llm_judge_credentials:
-            rows = _skipped_results("No LLM judge API key configured; trace captured but not judged.")
+            rows = _skipped_results(
+                "No LLM judge API key configured; trace captured but not judged.",
+                expected_names,
+            )
             if case.is_agent_trace:
                 rows += _score_agent_case(case, resolved_settings)
         else:
-            try:
-                rows = _run_rag_judges(case)
-            except ImportError:
-                rows = _skipped_results("DeepEval is not installed in this environment.")
-            if case.is_agent_trace:
-                rows += _score_agent_case(case, resolved_settings)
+            rows = []
+            rag_names = missing_names & set(RAG_METRIC_NAMES)
+            if rag_names:
+                expected_output = expected_answer_for_question(case.input)
+                try:
+                    rows.extend(_run_rag_judges(case, expected_output))
+                except ImportError:
+                    rows.extend(
+                        _skipped_results(
+                            "DeepEval is not installed in this environment.",
+                            rag_names,
+                        )
+                    )
+            if case.is_agent_trace and (missing_names & set(AGENT_METRIC_NAMES)):
+                rows.extend(_score_agent_case(case, resolved_settings))
 
         persisted: list[EvalResult] = []
         for row in rows:
-            result = EvalResult(
-                trace_id=trace_id,
-                metric_name=row["metric_name"],
-                score=row.get("score"),
-                status=row["status"],
-                reasoning=row.get("reasoning"),
-            )
-            session.add(result)
-            persisted.append(result)
+            if row["metric_name"] not in missing_names and row["metric_name"] in existing_by_name:
+                persisted.append(existing_by_name[row["metric_name"]])
+                continue
+            persisted.append(_upsert_eval_result(session, trace_id, row))
 
     return [_result_payload(result) for result in persisted]
 
 
 def score_pending_traces(limit: int = 25) -> list[str]:
-    """Sweep unscored traces — useful as a periodic backstop job."""
-
     scored: list[str] = []
     with session_scope() as session:
         trace_ids = session.scalars(

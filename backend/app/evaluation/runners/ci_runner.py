@@ -7,8 +7,10 @@ from collections import defaultdict
 from typing import Any
 
 from app.core.config import Settings, get_settings
+from app.core.llm import configure_llm_environment
 from app.evaluation.datasets.golden_dataset import GOLDEN_DATASET, GoldenExample
 from app.rag.chains import RAGResult, build_phase_one_chain
+from app.telemetry.callback_bridge import LangChainOTelCallbackHandler
 
 METRIC_NAMES = (
     "Faithfulness",
@@ -17,10 +19,10 @@ METRIC_NAMES = (
     "Hallucination",
 )
 
+_RAG_METRICS: list[tuple[str, Any]] | None = None
+
 
 def deepeval_is_available() -> bool:
-    """Avoid making DeepEval a runtime import requirement for the API shell."""
-
     try:
         import deepeval  # noqa: F401
     except ImportError:
@@ -29,8 +31,6 @@ def deepeval_is_available() -> bool:
 
 
 def make_deepeval_test_case(example: GoldenExample, result: RAGResult) -> Any:
-    """Build the standard DeepEval payload only when the package is installed."""
-
     from deepeval.test_case import LLMTestCase
 
     return LLMTestCase(
@@ -42,7 +42,9 @@ def make_deepeval_test_case(example: GoldenExample, result: RAGResult) -> Any:
 
 
 def build_rag_metrics() -> list[tuple[str, Any]]:
-    """Construct Phase 1's four required DeepEval metrics."""
+    global _RAG_METRICS
+    if _RAG_METRICS is not None:
+        return _RAG_METRICS
 
     from deepeval.metrics import (
         ContextualPrecisionMetric,
@@ -51,15 +53,13 @@ def build_rag_metrics() -> list[tuple[str, Any]]:
         HallucinationMetric,
     )
 
-    return [
+    _RAG_METRICS = [
         ("Faithfulness", FaithfulnessMetric(threshold=0.5, include_reason=True)),
-        (
-            "ContextualPrecision",
-            ContextualPrecisionMetric(threshold=0.5, include_reason=True),
-        ),
+        ("ContextualPrecision", ContextualPrecisionMetric(threshold=0.5, include_reason=True)),
         ("ContextualRecall", ContextualRecallMetric(threshold=0.5, include_reason=True)),
         ("Hallucination", HallucinationMetric(threshold=0.5, include_reason=True)),
     ]
+    return _RAG_METRICS
 
 
 def _skipped_metrics(reason: str) -> list[dict[str, Any]]:
@@ -70,20 +70,19 @@ def _skipped_metrics(reason: str) -> list[dict[str, Any]]:
 
 
 def _run_judges(executions: list[tuple[GoldenExample, RAGResult]]) -> list[dict[str, Any]]:
-    """Score every result and aggregate each DeepEval metric's numeric result."""
-
     aggregate: dict[str, list[float]] = defaultdict(list)
     successes: dict[str, list[bool]] = defaultdict(list)
     errors: dict[str, list[str]] = defaultdict(list)
+    metrics = build_rag_metrics()
     for example, result in executions:
         test_case = make_deepeval_test_case(example, result)
-        for name, metric in build_rag_metrics():
+        for name, metric in metrics:
             try:
                 metric.measure(test_case)
                 if metric.score is not None:
                     aggregate[name].append(float(metric.score))
                     successes[name].append(bool(getattr(metric, "success", True)))
-            except Exception as exc:  # Individual judge failure must not kill /eval/run.
+            except Exception as exc:
                 errors[name].append(str(exc))
 
     scorecard: list[dict[str, Any]] = []
@@ -112,11 +111,16 @@ def _run_judges(executions: list[tuple[GoldenExample, RAGResult]]) -> list[dict[
 
 
 def run_golden_dataset(settings: Settings | None = None) -> dict[str, Any]:
-    """Run deterministic RAG retrieval and, when configured, DeepEval judges."""
-
     resolved_settings = settings or get_settings()
-    chain = build_phase_one_chain(resolved_settings)
+    configure_llm_environment(resolved_settings)
+    callback_handler = LangChainOTelCallbackHandler()
+    chain = build_phase_one_chain(resolved_settings, callback_handler=callback_handler)
     executions = [(example, chain.invoke(example.query)) for example in GOLDEN_DATASET]
+    trace_ids = [
+        result.trace_id or callback_handler.last_completed_trace_id()
+        for _, result in executions
+    ]
+    trace_ids = [trace_id for trace_id in trace_ids if trace_id]
 
     if not resolved_settings.has_llm_judge_credentials:
         metrics = _skipped_metrics("No LLM judge API key is configured; offline RAG completed.")
@@ -138,12 +142,14 @@ def run_golden_dataset(settings: Settings | None = None) -> dict[str, Any]:
         "total_cases": len(executions),
         "llm_provider": executions[0][1].llm_provider if executions else "unknown",
         "metrics": metrics,
+        "trace_ids": trace_ids,
         "cases": [
             {
                 "id": example.id,
                 "query": example.query,
                 "answer": result.answer,
                 "source_ids": result.source_ids,
+                "trace_id": result.trace_id,
             }
             for example, result in executions
         ],
@@ -151,8 +157,6 @@ def run_golden_dataset(settings: Settings | None = None) -> dict[str, Any]:
 
 
 def main() -> None:
-    """Allow local use with ``python -m app.evaluation.runners.ci_runner``."""
-
     print(json.dumps(run_golden_dataset(), indent=2))
 
 
