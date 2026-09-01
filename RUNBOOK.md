@@ -15,8 +15,7 @@
 - Locally: `python -m app.evaluation.runners.ci_runner` (offline mode skips
   LLM-judge metrics; scores come back as `"skipped"`).
 - Against the API: `POST /api/v1/eval/run`.
-- In CI: `.github/workflows/eval.yml` runs `deepeval test run` on PRs when an
-  `OPENAI_API_KEY` secret is configured.
+- In CI: `.github/workflows/eval.yml` runs unit tests on every PR and `deepeval test run` when an `OPENROUTER_API_KEY` secret is configured.
 
 ## Sampling & cost control
 
@@ -27,20 +26,17 @@
 
 ## Storage scaling (P6-T4)
 
-Dev runs on SQLite (`traces.db`). Set `DATABASE_URL` to Postgres for shared
-state. The collector config ships a commented ClickHouse exporter for
-high-volume deployments; enable it plus a retention job before switching.
+Dev and production both use Postgres via `APP_DATABASE_URL`. The collector config ships a commented ClickHouse exporter for high-volume deployments; enable it plus a retention job before switching.
 
 ## Auth (P6-T3)
 
-Set `APP_API_KEY` to require `X-API-Key` on all `/metrics/*` routes. Unset =
-open access (dev default).
+Set `APP_API_KEY` to require `X-API-Key` on `/metrics/*`, `/eval/*`, `/agent/*`, and `/traces/*`. In non-development environments the API refuses to start without `APP_API_KEY` unless `APP_AUTH_DISABLED=true` is explicitly set. Mirror the same key in `frontend/.env.local` as `VITE_API_KEY`.
 
 ## Load test (P6-T5)
 
-```
+```bash
 cd backend
-./.venv/Scripts/python.exe -m scripts.load_test --concurrency 8 --requests 40
+python -m scripts.load_test --base-url http://localhost:8000 --api-key "$APP_API_KEY" --concurrency 8 --requests 40
 ```
 
 Compare p50/p95 with `APP_EVAL_SAMPLING_RATE=0` vs `=1` — the gap should be ~0,
@@ -51,6 +47,6 @@ proving eval cost stays off the hot path.
 | Symptom | Cause | Fix |
 |---|---|---|
 | Metrics show `no-data` | No traces scored yet | Run `POST /api/v1/eval/run` or invoke `/agent/invoke`. |
-| All judges `skipped` | No `OPENAI_API_KEY` | Expected offline; agent metrics still score deterministically. |
-| Traces page empty after agent call | OTLP exporter configured but collector down | Unset `OTEL_EXPORTER_OTLP_ENDPOINT` for local persistence mode. |
-| 401 on metrics API | `APP_API_KEY` set | Send `X-API-Key: <key>` header. |
+| All judges `skipped` | No `OPENROUTER_API_KEY` | Expected offline; agent metrics still score deterministically. |
+| Traces page empty after agent call | Postgres unreachable or persistence errors | Check `APP_DATABASE_URL`, backend logs, and Postgres health. |
+| 401 on dashboard/API | `APP_API_KEY` set | Send `X-API-Key` header and set matching `VITE_API_KEY` in the frontend. |
