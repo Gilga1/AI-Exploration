@@ -27,8 +27,10 @@ export function AgentLoopChart() {
   const efficient = metrics.runs.filter(
     (r) => r.classification === "efficient",
   ).length;
-  const thrashing = metrics.runs.length - efficient;
-  const total = metrics.runs.length || 1;
+  const thrashing = metrics.runs.filter(
+    (r) => r.classification === "thrashing",
+  ).length;
+  const classified = efficient + thrashing || 1;
 
   return (
     <div className="space-y-4">
@@ -67,11 +69,11 @@ export function AgentLoopChart() {
             <div className="flex h-3 w-full overflow-hidden rounded bg-slate-950/70">
               <div
                 className="h-3 bg-emerald-400"
-                style={{ width: `${(efficient / total) * 100}%` }}
+                style={{ width: `${(efficient / classified) * 100}%` }}
               />
               <div
                 className="h-3 bg-rose-400"
-                style={{ width: `${(thrashing / total) * 100}%` }}
+                style={{ width: `${(thrashing / classified) * 100}%` }}
               />
             </div>
           </div>
@@ -114,7 +116,9 @@ export function AgentLoopChart() {
                         className={`rounded-full px-2 py-0.5 text-xs ${
                           run.classification === "efficient"
                             ? "bg-emerald-400/10 text-emerald-300"
-                            : "bg-rose-400/10 text-rose-300"
+                            : run.classification === "thrashing"
+                              ? "bg-rose-400/10 text-rose-300"
+                              : "bg-slate-700 text-slate-300"
                         }`}
                       >
                         {run.classification}
