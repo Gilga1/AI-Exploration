@@ -19,10 +19,31 @@ Each project below is self-contained. Pick a branch, read its README, and run fr
 
 | Project | Branch | Summary |
 |---------|--------|---------|
+| [ReAct from scratch](#react-from-scratch) | [`cursor/poc-agent-foundation-react-d23e`](../../tree/cursor/poc-agent-foundation-react-d23e) | Bare-metal ReAct (Yao et al., 2022) — paper notes, Wikipedia tool loop, HotpotQA-style mini eval |
 | [AI Agent Harness](#ai-agent-harness) | [`cursor/agentic-harness`](../../tree/cursor/agentic-harness) | Plugin-based agent orchestration — routing, planning, DAG execution, memory, and tracing |
 | [Agentic RAG Eval Harness](#agentic-rag-eval-harness) | [`hermes/eval-harness`](../../tree/hermes/eval-harness) | LLM-driven evaluation for agentic RAG — LangGraph agent loop, OTel traces, DeepEval scoring |
 | [Semantic Layer Shell](#semantic-layer-shell) | [`cursor/semantic-layer-shell`](../../tree/cursor/semantic-layer-shell) | Platform-agnostic semantic layer with Neo4j graph; deterministic SQL assembly, not LLM-generated |
 | [Qwen Agentic Fine-Tuning](#qwen-agentic-fine-tuning) | [`cursor/qwen-agentic-ft-setup-7e0b`](../../tree/cursor/qwen-agentic-ft-setup-7e0b) | Fine-tune Qwen3.5-2B on LangChain / LangGraph / Deep Agents code patterns |
+
+---
+
+### ReAct from scratch
+
+**Branch:** `cursor/poc-agent-foundation-react-d23e`
+
+Bare-metal reproduction of [ReAct](https://arxiv.org/abs/2210.03629) (Yao et al., ICLR 2023). Implements the Thought / Action / Observation loop, the paper's Wikipedia `search` / `lookup` / `finish` API, and HotpotQA exact-match scoring — no LangChain.
+
+**What it explores:** why interleaving reasoning traces with tool use is the ancestor of later agent loops; CoT hallucination vs ReAct search misses; execution-based EM/F1 on a public multi-hop mini-set.
+
+**Get started:**
+```bash
+git fetch origin cursor/poc-agent-foundation-react-d23e
+git checkout cursor/poc-agent-foundation-react-d23e
+cd poc/agent-foundation/ReAct
+python -m pip install -e ".[dev]"
+python -m pytest -m "not network"
+# See PAPER_NOTES.md and notebooks/react_from_scratch.ipynb
+```
 
 ---
 

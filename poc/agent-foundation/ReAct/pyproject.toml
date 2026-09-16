@@ -1,0 +1,26 @@
+[project]
+name = "react-foundations"
+version = "0.1.0"
+description = "Bare-metal ReAct (Yao et al., 2022) reproduction for study"
+requires-python = ">=3.11"
+dependencies = [
+  "beautifulsoup4",
+  "requests",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["react_foundations*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+  "network: hits live Wikipedia (deselect with -m 'not network')",
+]
