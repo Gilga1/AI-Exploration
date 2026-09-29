@@ -49,8 +49,19 @@ python -m pytest -m network   # live en.wikipedia.org
 
 ```bash
 cd poc/agent-foundation/ReAct
-jupyter notebook notebooks/react_from_scratch.ipynb
+bash scripts/start_notebook.sh
+# or: python3 -m venv .venv && source .venv/bin/activate
+#     pip install -e ".[dev,notebook]"
+#     jupyter notebook notebooks/react_from_scratch.ipynb
 ```
+
+Read [`PAPER_NOTES.md`](PAPER_NOTES.md) first, then work through the notebook top to bottom. Suggested experiments:
+
+1. **Figure 1 replay** — see ReAct recover after a bad `Search[...]` while Act stalls.
+2. **Mini eval table** — compare `react` / `act` / `cot` / `standard` on the same 8 questions (scripted LLM).
+3. **Break the parser** — change one `Action` line to invalid syntax; watch `n_badcalls` and failure tags.
+4. **Live Wikipedia** — run the live env cell (needs network); compare local wiki vs real pages.
+5. **Your model** — section 10: set `OPENROUTER_*` env vars, swap in `OpenRouterLLM.from_env()`, run **one** question before the full mini-set.
 
 The notebook runs end-to-end with **scripted** Thought/Action traces by default (no API key). For a **live model via OpenRouter**, copy `.env.example` to `.env`, set `OPENROUTER_API_KEY` and `OPENROUTER_MODEL`, then use `OpenRouterLLM.from_env()` or the CLI below.
 
