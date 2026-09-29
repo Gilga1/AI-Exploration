@@ -56,4 +56,12 @@ def evaluate_with_llm(llm: LLMClient, method: Method, env: WikiEnv | None = None
         results.append(agent.run(task.question, gold=task.answer))
     em = sum(result.em for result in results) / len(results)
     f1 = sum(result.f1 for result in results) / len(results)
-    return {"method": method, "n": len(results), "em": em, "f1": f1, "results": results}
+    tags = Counter(result.failure_tag for result in results if result.failure_tag)
+    return {
+        "method": method,
+        "n": len(results),
+        "em": em,
+        "f1": f1,
+        "failure_tags": dict(tags),
+        "results": results,
+    }

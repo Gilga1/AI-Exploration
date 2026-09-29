@@ -52,7 +52,21 @@ cd poc/agent-foundation/ReAct
 jupyter notebook notebooks/react_from_scratch.ipynb
 ```
 
-The notebook runs end-to-end with **scripted** Thought/Action traces (the algorithm is real; the language model is replayed). Point `OPENAI_API_KEY` at a completions-compatible model only if you want a live LLM.
+The notebook runs end-to-end with **scripted** Thought/Action traces by default (no API key). For a **live model via OpenRouter**, copy `.env.example` to `.env`, set `OPENROUTER_API_KEY` and `OPENROUTER_MODEL`, then use `OpenRouterLLM.from_env()` or the CLI below.
+
+### Live eval (OpenRouter)
+
+```bash
+cd poc/agent-foundation/ReAct
+export OPENROUTER_API_KEY=...
+export OPENROUTER_MODEL=openai/gpt-4o-mini   # or any chat model on OpenRouter
+python scripts/run_live_eval.py --method react --wiki local
+python scripts/run_live_eval.py --method react --wiki live --limit 2   # real Wikipedia
+```
+
+`REACT_LLM_BACKEND=openai_completions` plus `OPENAI_API_KEY` still works for legacy **instruct** models that expose `/v1/completions` (not most OpenRouter chat models).
+
+**Branch:** `cursor/poc-agent-foundation-react-openrouter-55b7` (live LLM path). The earlier draft `cursor/poc-agent-foundation-react-d23e` is the scripted-only study branch.
 
 ## Official sources
 

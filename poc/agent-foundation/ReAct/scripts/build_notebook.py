@@ -307,25 +307,27 @@ except Exception as exc:
 
 md(
     """
-## 10. How to attach a real LLM
+## 10. How to attach a real LLM (OpenRouter)
 
-The original code used `text-davinci-002` completions with `stop=["\\nObservation i:"]`. Modern chat models can do the same if you send the few-shot prefix as a single user/prompt string and keep greedy decoding (`temperature=0`).
+The original code used `text-davinci-002` **completions** with `stop=["\\nObservation i:"]`. On OpenRouter, use **chat** models via `OpenRouterLLM` — one user message per step, greedy decoding (`temperature=0`).
 
 ```python
-import os
-from react_foundations.llm import OpenAICompatibleLLM
+from react_foundations.llm import OpenRouterLLM
 from react_foundations.loop import ReactAgent
 from react_foundations.wiki import LiveWikipediaEnv, load_hotpot_mini
 
-llm = OpenAICompatibleLLM(model="gpt-3.5-turbo-instruct", api_key=os.environ["OPENAI_API_KEY"])
+# export OPENROUTER_API_KEY=...  OPENROUTER_MODEL=openai/gpt-4o-mini
+llm = OpenRouterLLM.from_env()
 agent = ReactAgent(llm, LiveWikipediaEnv(), method="react")
 task = load_hotpot_mini()[0]
 print(agent.run(task.question, gold=task.answer))
 ```
 
-Do not report that number as a reproduction of Table 1 unless the model, shot count, decoding, and 500-dev sample match. Report it as *your* baseline.
+CLI: `python scripts/run_live_eval.py --method react --wiki live --limit 1`
 
-When you do run a live model, log for every failure one of `{reasoning_error, search_result_error, hallucination, label_ambiguity, no_answer}` — Table 2, not MAST (MAST is multi-agent, later).
+Do not report scores as Table 1 unless the model, shot count, decoding, and 500-dev sample match. Report them as *your* baseline.
+
+When you run a live model, tag failures with `{reasoning_error, search_result_error, hallucination, label_ambiguity, no_answer}` — Table 2, not MAST (MAST is multi-agent, later).
 """
 )
 
