@@ -1,4 +1,4 @@
-"""LLM backends: scripted replays, OpenRouter chat, and legacy completions APIs."""
+"""LLM backends for live ReAct runs (OpenRouter chat by default)."""
 
 from __future__ import annotations
 
@@ -9,28 +9,6 @@ from typing import Any, Protocol
 
 class LLMClient(Protocol):
     def complete(self, prompt: str, stop: list[str] | None = None) -> str: ...
-
-
-@dataclass
-class ScriptedLLM:
-    """Return pre-recorded continuations in order (paper trajectory replays)."""
-
-    completions: list[str]
-    calls: list[str] = field(default_factory=list)
-
-    def complete(self, prompt: str, stop: list[str] | None = None) -> str:
-        self.calls.append(prompt)
-        if not self.completions:
-            raise RuntimeError("ScriptedLLM has no remaining completions")
-        text = self.completions.pop(0)
-        if stop:
-            cut = len(text)
-            for token in stop:
-                idx = text.find(token)
-                if idx != -1:
-                    cut = min(cut, idx)
-            text = text[:cut]
-        return text
 
 
 @dataclass
@@ -92,7 +70,7 @@ class ChatCompletionsLLM:
 
 @dataclass
 class OpenRouterLLM(ChatCompletionsLLM):
-    """OpenRouter chat models (recommended for live ReAct runs)."""
+    """OpenRouter chat models."""
 
     base_url: str = "https://openrouter.ai/api/v1"
 
@@ -101,7 +79,9 @@ class OpenRouterLLM(ChatCompletionsLLM):
         api_key = os.environ.get("OPENROUTER_API_KEY")
         model = os.environ.get("OPENROUTER_MODEL")
         if not api_key:
-            raise RuntimeError("Set OPENROUTER_API_KEY to run with a live model.")
+            raise RuntimeError(
+                "Set OPENROUTER_API_KEY. Copy .env.example to .env or export variables."
+            )
         if not model:
             raise RuntimeError(
                 "Set OPENROUTER_MODEL (e.g. openai/gpt-4o-mini or meta-llama/llama-3.1-8b-instruct)."
@@ -127,7 +107,7 @@ class OpenRouterLLM(ChatCompletionsLLM):
 
 @dataclass
 class OpenAICompatibleLLM:
-    """Legacy text completions API (OpenAI instruct models). Most OpenRouter models need ChatCompletionsLLM."""
+    """Legacy text completions API (instruct models). Prefer OpenRouterLLM for OpenRouter."""
 
     model: str
     api_key: str

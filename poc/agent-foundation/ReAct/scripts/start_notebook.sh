@@ -9,5 +9,9 @@ fi
 # shellcheck source=/dev/null
 source .venv/bin/activate
 pip install -q -e ".[dev,notebook]"
+if [[ -z "${OPENROUTER_API_KEY:-}" || -z "${OPENROUTER_MODEL:-}" ]]; then
+  echo "Set OPENROUTER_API_KEY and OPENROUTER_MODEL (see .env.example) before running the notebook."
+  exit 1
+fi
 echo "Open: http://127.0.0.1:8888/notebooks/notebooks/react_from_scratch.ipynb"
 jupyter notebook --no-browser --ip=127.0.0.1 --port=8888 --allow-root notebooks/react_from_scratch.ipynb

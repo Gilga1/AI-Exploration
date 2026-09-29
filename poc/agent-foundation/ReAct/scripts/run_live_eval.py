@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the HotpotQA mini-set with a live LLM (OpenRouter by default)."""
+"""Run the HotpotQA mini-set with OpenRouter (requires OPENROUTER_API_KEY + OPENROUTER_MODEL)."""
 
 from __future__ import annotations
 

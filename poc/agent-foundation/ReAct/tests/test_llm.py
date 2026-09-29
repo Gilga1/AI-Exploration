@@ -2,12 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from react_foundations.llm import ChatCompletionsLLM, OpenRouterLLM, ScriptedLLM, llm_from_env
-
-
-def test_scripted_llm_applies_stop():
-    llm = ScriptedLLM(["hello\nObservation 1: tail"])
-    assert llm.complete("p", stop=["\nObservation"]) == "hello"
+from react_foundations.llm import ChatCompletionsLLM, OpenRouterLLM, llm_from_env
 
 
 def test_chat_completions_parses_response():
