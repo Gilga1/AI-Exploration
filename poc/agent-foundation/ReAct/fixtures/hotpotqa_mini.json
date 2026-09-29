@@ -1,0 +1,54 @@
+{
+  "source": "Public multi-hop questions in the style of HotpotQA (Yang et al., 2018). Item 1 is the running example from ReAct (Yao et al., 2022). Answers are checked with HotpotQA exact match / token F1, not LLM-as-judge.",
+  "examples": [
+    {
+      "id": "react-fig1-magazines",
+      "question": "Which magazine was started first, Arthur's Magazine or First for Women?",
+      "answer": "Arthur's Magazine",
+      "hops": ["Arthur's Magazine", "First for Women"],
+      "notes": "Paper Figure 1 running example. CoT can hallucinate founding years; ReAct should look them up."
+    },
+    {
+      "id": "iphone-hq",
+      "question": "In which city is the company that created the iPhone headquartered?",
+      "answer": "Cupertino",
+      "hops": ["iPhone", "Apple Inc."]
+    },
+    {
+      "id": "atticus-author",
+      "question": "Who wrote the novel that features the character Atticus Finch?",
+      "answer": "Harper Lee",
+      "hops": ["Atticus Finch", "To Kill a Mockingbird"]
+    },
+    {
+      "id": "austen-country",
+      "question": "The author of Pride and Prejudice was born in which country?",
+      "answer": "England",
+      "hops": ["Pride and Prejudice", "Jane Austen"]
+    },
+    {
+      "id": "nairobi-ocean",
+      "question": "What ocean borders the country whose capital is Nairobi?",
+      "answer": "Indian Ocean",
+      "hops": ["Nairobi", "Kenya"]
+    },
+    {
+      "id": "sistine-painter-city",
+      "question": "Who painted the ceiling of the Sistine Chapel?",
+      "answer": "Michelangelo",
+      "hops": ["Sistine Chapel"]
+    },
+    {
+      "id": "uranium-z",
+      "question": "What is the atomic number of the chemical element named after the planet Uranus?",
+      "answer": "92",
+      "hops": ["Uranus", "Uranium"]
+    },
+    {
+      "id": "youtube-acquirer",
+      "question": "Which company acquired YouTube?",
+      "answer": "Google",
+      "hops": ["YouTube"]
+    }
+  ]
+}
