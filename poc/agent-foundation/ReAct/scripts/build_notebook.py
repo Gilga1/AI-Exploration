@@ -69,10 +69,17 @@ from react_foundations.llm import OpenRouterLLM
 from react_foundations.loop import ReactAgent
 from react_foundations.wiki import LiveWikipediaEnv, LocalWikiEnv, load_hotpot_mini
 
-from react_foundations.env_config import load_project_dotenv
+from react_foundations.env_config import debug_env_status, load_dotenv_file, load_project_dotenv
 
-loaded = load_project_dotenv()
-print(".env loaded from:", loaded)
+# Always load .env next to pyproject.toml (works when kernel cwd is notebooks/)
+env_path = ROOT / ".env"
+if env_path.is_file():
+    load_dotenv_file(env_path)
+else:
+    load_project_dotenv()
+
+for key, value in debug_env_status().items():
+    print(f"{key}: {value}")
 
 llm = OpenRouterLLM.from_env()
 print("model:", llm.model)
