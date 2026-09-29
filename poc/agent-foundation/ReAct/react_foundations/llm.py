@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from react_foundations.env_config import dotenv_hint, load_project_dotenv
+
 
 class LLMClient(Protocol):
     def complete(self, prompt: str, stop: list[str] | None = None) -> str: ...
@@ -76,16 +78,17 @@ class OpenRouterLLM(ChatCompletionsLLM):
 
     @classmethod
     def from_env(cls) -> OpenRouterLLM:
+        load_project_dotenv()
         api_key = os.environ.get("OPENROUTER_API_KEY")
         model = os.environ.get("OPENROUTER_MODEL")
         if not api_key:
-            raise RuntimeError(
-                "Set OPENROUTER_API_KEY. Copy .env.example to .env or export variables."
-            )
+            raise RuntimeError(dotenv_hint())
         if not model:
             raise RuntimeError(
-                "Set OPENROUTER_MODEL (e.g. openai/gpt-4o-mini or meta-llama/llama-3.1-8b-instruct)."
+                f"OPENROUTER_MODEL is not set.\n{dotenv_hint()}"
             )
+        api_key = api_key.strip()
+        model = model.strip()
         extra: dict[str, str] = {}
         referer = os.environ.get("OPENROUTER_HTTP_REFERER")
         if referer:
@@ -136,6 +139,7 @@ class OpenAICompatibleLLM:
 
 def llm_from_env() -> LLMClient:
     """Construct a live LLM from environment variables (OpenRouter by default)."""
+    load_project_dotenv()
     backend = os.environ.get("REACT_LLM_BACKEND", "openrouter").lower()
     if backend == "openrouter":
         return OpenRouterLLM.from_env()

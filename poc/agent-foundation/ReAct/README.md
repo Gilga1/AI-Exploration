@@ -10,9 +10,19 @@ Read [`PAPER_NOTES.md`](PAPER_NOTES.md) before the notebook.
 cd poc/agent-foundation/ReAct
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,notebook]"
-cp .env.example .env
-# Edit .env: OPENROUTER_API_KEY, OPENROUTER_MODEL
+cp .env.example .env   # Windows: copy .env.example .env
+# Edit .env in THIS folder (next to pyproject.toml): OPENROUTER_API_KEY, OPENROUTER_MODEL
+pip install -e ".[dev,notebook]"   # installs python-dotenv — required to read .env
 ```
+
+**Windows / Jupyter:** If cell 0 still fails, set vars in the same terminal that launched Jupyter, or in PowerShell before `jupyter notebook`:
+
+```powershell
+$env:OPENROUTER_API_KEY="sk-or-..."
+$env:OPENROUTER_MODEL="openai/gpt-4o-mini"
+```
+
+Restart the notebook kernel after changing `.env`.
 
 ## Notebook (recommended)
 

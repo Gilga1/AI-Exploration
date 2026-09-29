@@ -36,8 +36,11 @@ Read [`../PAPER_NOTES.md`](../PAPER_NOTES.md) first. Every experiment below call
 **Before you start**
 
 ```bash
-cp .env.example .env   # set OPENROUTER_API_KEY and OPENROUTER_MODEL
+cp .env.example .env   # in poc/agent-foundation/ReAct/ — then set OPENROUTER_API_KEY and OPENROUTER_MODEL
+pip install -e ".[dev,notebook]"   # python-dotenv loads .env automatically in from_env()
 ```
+
+On Windows, restart the kernel after editing `.env`, or set `$env:OPENROUTER_API_KEY` in PowerShell.
 
 Paper: https://arxiv.org/abs/2210.03629 · official code: https://github.com/ysymyth/ReAct
 """
@@ -65,6 +68,11 @@ from react_foundations.evaluate import evaluate_mini, run_example
 from react_foundations.llm import OpenRouterLLM
 from react_foundations.loop import ReactAgent
 from react_foundations.wiki import LiveWikipediaEnv, LocalWikiEnv, load_hotpot_mini
+
+from react_foundations.env_config import load_project_dotenv
+
+loaded = load_project_dotenv()
+print(".env loaded from:", loaded)
 
 llm = OpenRouterLLM.from_env()
 print("model:", llm.model)
