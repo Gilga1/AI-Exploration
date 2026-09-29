@@ -42,7 +42,7 @@ git checkout cursor/poc-agent-foundation-react-openrouter-55b7
 cd poc/agent-foundation/ReAct
 python -m pip install -e ".[dev]"
 python -m pytest -m "not network"
-export OPENROUTER_API_KEY=... OPENROUTER_MODEL=openai/gpt-4o-mini
+export OPENROUTER_API_KEY=... OPENROUTER_MODEL=openai/gpt-4o-mini  # required — no scripted fallback
 python scripts/run_live_eval.py --method react --wiki local
 # See PAPER_NOTES.md and notebooks/react_from_scratch.ipynb
 ```

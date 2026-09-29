@@ -235,7 +235,7 @@ Minimum viable reproduction (this folder):
 5. Ablations: Standard, CoT, Act, ReAct on the same questions.
 6. Failure tags aligned with Table 2.
 
-Then, and only then, swap the scripted LLM for a real model and the local wiki for live Wikipedia. If you start with LangChain’s ReAct agent you will learn an API, not the result.
+Run the loop with a live LLM (this repo uses OpenRouter) and the local wiki first; then swap in live Wikipedia. If you start with LangChain’s ReAct agent you will learn an API, not the result.
 
 ---
 
