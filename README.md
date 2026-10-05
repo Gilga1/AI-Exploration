@@ -23,6 +23,7 @@ Each project below is self-contained. Pick a branch, read its README, and run fr
 | [Agentic RAG Eval Harness](#agentic-rag-eval-harness) | [`hermes/eval-harness`](../../tree/hermes/eval-harness) | LLM-driven evaluation for agentic RAG — LangGraph agent loop, OTel traces, DeepEval scoring |
 | [Semantic Layer Shell](#semantic-layer-shell) | [`cursor/semantic-layer-shell`](../../tree/cursor/semantic-layer-shell) | Platform-agnostic semantic layer with Neo4j graph; deterministic SQL assembly, not LLM-generated |
 | [Qwen Agentic Fine-Tuning](#qwen-agentic-fine-tuning) | [`cursor/qwen-agentic-ft-setup-7e0b`](../../tree/cursor/qwen-agentic-ft-setup-7e0b) | Fine-tune Qwen3.5-2B on LangChain / LangGraph / Deep Agents code patterns |
+| [MCP Apps exploration](#mcp-apps-exploration) | [`cursor/mcp-apps-exploration-ac82`](../../tree/cursor/mcp-apps-exploration-ac82) | Interactive MCP Apps in Claude: live maps, dashboards, sheets, and host-controlled layout |
 
 ---
 
@@ -91,6 +92,25 @@ git fetch origin cursor/qwen-agentic-ft-setup-7e0b
 git checkout cursor/qwen-agentic-ft-setup-7e0b
 python scripts/setup_env.py --extra dev
 # See README.md on that branch
+```
+
+---
+
+### MCP Apps exploration
+
+**Branch:** `cursor/mcp-apps-exploration-ac82`
+
+A mocked but fully wired MCP Apps gallery for Claude: live fleet map, operations dashboard, bottom sheets / dialogs, and interaction controls. Layout is host-controlled (`containerDimensions` + `inline` / `fullscreen` / `pip`), so the chat-column screenshot is not a protocol width cap.
+
+**What it explores:** SEP-1865 UI resources, Claude design guidelines, CSP/sandbox limits, and which UX patterns actually feel native inside a conversation.
+
+**Get started:**
+```bash
+git fetch origin cursor/mcp-apps-exploration-ac82
+git checkout cursor/mcp-apps-exploration-ac82
+cd mcp-apps-exploration
+npm install && npm test && npm run preview
+# See mcp-apps-exploration/README.md and RESEARCH.md
 ```
 
 ---

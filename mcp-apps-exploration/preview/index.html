@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MCP Apps host preview</title>
+    <link rel="stylesheet" href="/preview/preview.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div>
+        <p class="eyebrow">Local host · not Claude</p>
+        <h1>MCP Apps layout lab</h1>
+        <p>
+          The protocol does not freeze apps at Claude’s chat-column width. This host
+          resizes the same sandboxed iframe the way a real host sets
+          <code>containerDimensions</code>.
+        </p>
+      </div>
+      <dl class="readout">
+        <div><dt>Host width</dt><dd id="host-width">—</dd></div>
+        <div><dt>Mode</dt><dd id="host-mode">inline</dd></div>
+        <div><dt>Last RPC</dt><dd id="last-rpc">waiting</dd></div>
+      </dl>
+    </header>
+    <div class="controls">
+      <label>Preset
+        <select id="preset">
+          <option value="320">320 mobile</option>
+          <option value="560">560 compact chat</option>
+          <option value="736" selected>736 Claude Desktop inline (observed)</option>
+          <option value="960">960 wide pane</option>
+          <option value="1200">1200 side-by-side</option>
+          <option value="100%">100% of this window</option>
+        </select>
+      </label>
+      <button id="mode-inline">Inline</button>
+      <button id="mode-full">Fullscreen</button>
+      <button id="mode-pip">PiP</button>
+      <label>Theme
+        <select id="theme">
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+        </select>
+      </label>
+    </div>
+    <section id="stage" class="stage inline">
+      <iframe id="app-frame" title="MCP App" sandbox="allow-scripts allow-forms allow-same-origin"></iframe>
+    </section>
+    <aside class="proof">
+      <h2>Grounding</h2>
+      <ul>
+        <li><code>McpUiHostContext.containerDimensions</code> is host-owned (ext-apps <code>src/spec.types.ts</code>).</li>
+        <li>Claude Desktop has been observed at <strong>736× max 5000</strong> for <em>inline</em> only — issue #688, not a spec cap.</li>
+        <li><code>ui/request-display-mode</code> can ask for <code>fullscreen</code> / <code>pip</code>. Claude currently returns inline+fullscreen.</li>
+        <li>Official map-server proves 3D globes are in-scope; this gallery uses a CSP-safe canvas map so it runs without tile CDNs.</li>
+      </ul>
+    </aside>
+    <script type="module" src="/preview/host.ts"></script>
+  </body>
+</html>
