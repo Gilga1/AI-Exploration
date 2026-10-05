@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MCP Apps UX exploration</title>
+  </head>
+  <body>
+    <main id="app">
+      <header class="chrome">
+        <div class="brand">
+          <strong>Fleet canvas</strong>
+          <span id="mode-pill">connecting…</span>
+        </div>
+        <nav class="tabs" aria-label="Views">
+          <button class="on" data-view="overview">Overview</button>
+          <button data-view="map">Live map</button>
+          <button data-view="dashboard">Dashboard</button>
+          <button data-view="modals">Sheets</button>
+          <button data-view="interact">Controls</button>
+        </nav>
+      </header>
+      <section id="stage"></section>
+    </main>
+    <script type="module" src="/src/ui/app.ts"></script>
+  </body>
+</html>

@@ -28,3 +28,9 @@ mlruns/
 .DS_Store
 .idea/
 .vscode/
+
+# Node (MCP Apps exploration)
+node_modules/
+mcp-apps-exploration/node_modules/
+mcp-apps-exploration/dist/
+mcp-apps-exploration/preview-dist/
