@@ -14,6 +14,8 @@ describe("MCP Apps wiring", () => {
     assert.match(server, /RESOURCE_MIME_TYPE/);
     assert.match(server, /show_live_map/);
     assert.match(server, /show_operations_dashboard/);
+    assert.match(server, /StreamableHTTPServerTransport/);
+    assert.doesNotMatch(server, /StdioServerTransport/);
   });
 
   it("does not hardcode Claude chat-column width in the app CSS", () => {

@@ -34,26 +34,50 @@ Open `http://localhost:4177/preview/index.html`. Change the width preset and dis
 
 ## Run as an MCP server for Claude
 
+This server speaks **Streamable HTTP only** (no stdio). Claude loads the app HTML from `POST /mcp`; you do not host a separate frontend.
+
 ```bash
 npm run build
-npm run serve          # Streamable HTTP at http://localhost:3001/mcp
-npm run serve:stdio    # for Claude Desktop
+npm run serve          # http://127.0.0.1:3001/mcp
 ```
 
-Claude Desktop `claude_desktop_config.json`:
+Health check: `GET http://127.0.0.1:3001/health`
+
+**Claude.ai:** tunnel `http://127.0.0.1:3001/mcp` (Cloudflare Tunnel, ngrok) and add a custom connector (paid plans).
+
+**Claude Code:**
+
+```bash
+claude mcp add --transport http mcp-apps-exploration http://127.0.0.1:3001/mcp
+```
+
+or in `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "mcp-apps-exploration": {
+      "type": "http",
+      "url": "http://127.0.0.1:3001/mcp"
+    }
+  }
+}
+```
+
+**Claude Desktop:** Desktop’s JSON config still only launches stdio processes. Point it at this HTTP server with a bridge, or add the public tunnel as a custom connector:
 
 ```json
 {
   "mcpServers": {
     "mcp-apps-exploration": {
       "command": "npx",
-      "args": ["tsx", "/ABS/PATH/ai-exploration/mcp-apps-exploration/server.ts", "--stdio"]
+      "args": ["-y", "mcp-remote", "http://127.0.0.1:3001/mcp", "--transport", "http-only"]
     }
   }
 }
 ```
 
-Claude web: tunnel `http://localhost:3001` and add a custom connector (paid plans). Then ask: “Open the MCP Apps gallery” or “Show the live fleet map”.
+Then ask: “Open the MCP Apps gallery” or “Show the live fleet map”.
 
 ## Tools
 

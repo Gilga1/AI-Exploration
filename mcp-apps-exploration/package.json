@@ -9,7 +9,6 @@
     "preview:build": "vite build --config vite.preview.config.ts",
     "preview": "vite --config vite.preview.config.ts",
     "serve": "tsx server.ts",
-    "serve:stdio": "tsx server.ts --stdio",
     "test": "tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit"
   },

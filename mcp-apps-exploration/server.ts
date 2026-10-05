@@ -5,7 +5,6 @@
  * a tool with `_meta.ui.resourceUri` plus a `text/html;profile=mcp-app` resource.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   registerAppResource,
@@ -14,6 +13,7 @@ import {
 } from "@modelcontextprotocol/ext-apps/server";
 import cors from "cors";
 import express from "express";
+import type { Server } from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -157,34 +157,75 @@ export function createServer(): McpServer {
   return server;
 }
 
-async function serveHttp(port = 3001) {
+async function attachMcp(req: express.Request, res: express.Response) {
+  const server = createServer();
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+    enableJsonResponse: true,
+  });
+  res.on("close", () => transport.close());
+  await server.connect(transport);
+  await transport.handleRequest(req, res, req.body);
+}
+
+export async function startHttpServer(
+  port = Number(process.env.PORT ?? 3001),
+  host = process.env.HOST ?? "0.0.0.0",
+): Promise<{ port: number; host: string; close: () => Promise<void> }> {
   const expressApp = express();
   expressApp.use(cors());
   expressApp.use(express.json());
-  expressApp.post("/mcp", async (req, res) => {
-    const server = createServer();
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-      enableJsonResponse: true,
+
+  expressApp.get("/", (_req, res) => {
+    res.json({
+      name: "mcp-apps-exploration",
+      transport: "streamable-http",
+      mcp: "/mcp",
     });
-    res.on("close", () => transport.close());
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
   });
-  expressApp.listen(port, () => {
-    console.log(`MCP Apps exploration listening on http://localhost:${port}/mcp`);
+
+  expressApp.get("/health", (_req, res) => {
+    res.json({ ok: true, transport: "http" });
   });
+
+  expressApp.all("/mcp", async (req, res) => {
+    try {
+      await attachMcp(req, res);
+    } catch (error) {
+      console.error("MCP request failed", error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          jsonrpc: "2.0",
+          error: { code: -32603, message: "Internal server error" },
+          id: null,
+        });
+      }
+    }
+  });
+
+  const httpServer = await new Promise<Server>((resolve) => {
+    const listener = expressApp.listen(port, host, () => resolve(listener));
+  });
+  const address = httpServer.address();
+  const boundPort =
+    address && typeof address === "object" ? address.port : port;
+
+  console.log(`MCP Apps exploration listening on http://${host}:${boundPort}/mcp`);
+
+  return {
+    port: boundPort,
+    host,
+    close: () =>
+      new Promise((resolve, reject) => {
+        httpServer.close((err) => (err ? reject(err) : resolve()));
+      }),
+  };
 }
 
-async function serveStdio() {
-  const server = createServer();
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-}
+const isMain =
+  process.argv[1] !== undefined &&
+  path.resolve(process.argv[1]) === SERVER_FILE;
 
-const isStdio = process.argv.includes("--stdio");
-if (isStdio) {
-  await serveStdio();
-} else {
-  await serveHttp(Number(process.env.PORT ?? 3001));
+if (isMain) {
+  await startHttpServer();
 }

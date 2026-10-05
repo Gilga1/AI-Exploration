@@ -81,4 +81,4 @@ Claude, Claude Desktop, VS Code GitHub Copilot, Microsoft 365 Copilot, Goose, Po
 
 ## What we are not claiming
 
-We did not attach this server to production Claude in this environment. The local preview host implements the same `ui/initialize` / `ui/request-display-mode` / `containerDimensions` contract so layout can be proven without Claude. Connecting via stdio or a Cloudflare tunnel is the next live experiment.
+We did not attach this server to production Claude in this environment. The local preview host implements the same `ui/initialize` / `ui/request-display-mode` / `containerDimensions` contract so layout can be proven without Claude. The MCP process is Streamable HTTP (`POST /mcp`); Claude.ai uses a public tunnel as a custom connector, Claude Code uses `"type": "http"`, and Claude Desktop can reach the same endpoint through `mcp-remote` or a custom connector.
