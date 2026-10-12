@@ -35,6 +35,15 @@ describe("MCP Apps wiring", () => {
     assert.doesNotMatch(css, /width:\s*736px/);
   });
 
+  it("keeps [hidden] overlays from painting over Sheets", () => {
+    const css = readFileSync(path.join(root, "src/ui/styles.css"), "utf8");
+    assert.match(css, /\[hidden\][\s\S]*display:\s*none\s*!important/);
+    const modals = readFileSync(path.join(root, "src/ui/modals.ts"), "utf8");
+    const sheetAt = modals.indexOf('id="sheet"');
+    const alertsAt = modals.indexOf("alert-list");
+    assert.ok(sheetAt > 0 && alertsAt > sheetAt, "sheet must sit above the alert list so it is on-screen");
+  });
+
   it("asks the host for fullscreen instead of assuming inline-only", () => {
     const app = readFileSync(path.join(root, "src/ui/app.ts"), "utf8");
     assert.match(app, /requestDisplayMode/);
