@@ -79,6 +79,36 @@ or in `.mcp.json`:
 
 Then ask: “Open the MCP Apps gallery” or “Show the live fleet map”.
 
+## Prompts and resources (test in Claude)
+
+After the connector is connected, Claude does **not** auto-run these. Open a chat, click **+** (bottom-left of the composer) → **Connectors** → **Add from mcp-apps-exploration**.
+
+### Prompts (named recipes)
+
+| Prompt | Args | What Claude should do |
+| --- | --- | --- |
+| `open_gallery` | — | Call `explore_mcp_apps` |
+| `delayed_vans_today` | — | Analog of “BUs with trade today”: call `show_live_map`, table delayed vans |
+| `region_ops_report` | `region` | Analog of `weekly_sales_report(department)`: call dashboard, compare regions |
+| `incident_playbook` | optional `vehicle_id` | Open sheets view and walk an alert |
+
+Claude Desktop often attaches the prompt as a **file pill**. Type `go` and send.
+
+### Resources (read-only context)
+
+| URI | Role |
+| --- | --- |
+| `ops://glossary` | Term definitions (van ≈ BU, delayed ≈ trade today) |
+| `ops://my-regions` | Mock post-auth entitlements (SOMA + Mission) |
+| `ops://dashboard-schema` | How to read KPI fields |
+| `ops://snapshot/today` | Frozen fleet table — not a live query |
+| `ops://region/{region}` | Per-region briefing template |
+| `ui://mcp-apps-exploration/gallery.html` | MCP App HTML (host-loaded, not for the + menu) |
+
+**Suggested Claude trial:** attach `ops://glossary` + pick `delayed_vans_today` → send `go`. You want the live map app **and** a Markdown table that uses glossary labels.
+
+App buttons still use `callServerTool` / `sendMessage`. They do not invoke `prompts/get`.
+
 ## Tools
 
 | Tool | UI |

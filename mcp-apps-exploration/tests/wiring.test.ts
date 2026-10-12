@@ -15,7 +15,18 @@ describe("MCP Apps wiring", () => {
     assert.match(server, /show_live_map/);
     assert.match(server, /show_operations_dashboard/);
     assert.match(server, /StreamableHTTPServerTransport/);
+    assert.match(server, /registerCatalog/);
     assert.doesNotMatch(server, /StdioServerTransport/);
+  });
+
+  it("ships named prompts and ops:// resources for the Claude + menu", () => {
+    const catalog = readFileSync(path.join(root, "src/catalog.ts"), "utf8");
+    assert.match(catalog, /registerPrompt/);
+    assert.match(catalog, /delayed_vans_today/);
+    assert.match(catalog, /region_ops_report/);
+    assert.match(catalog, /ops:\/\/glossary/);
+    assert.match(catalog, /ops:\/\/my-regions/);
+    assert.match(catalog, /ResourceTemplate/);
   });
 
   it("does not hardcode Claude chat-column width in the app CSS", () => {

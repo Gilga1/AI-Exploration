@@ -30,9 +30,16 @@ describe("HTTP MCP transport", () => {
   it("exposes a health endpoint", async () => {
     const res = await fetch(`${base}/health`);
     assert.equal(res.status, 200);
-    const body = (await res.json()) as { ok: boolean; transport: string };
+    const body = (await res.json()) as {
+      ok: boolean;
+      transport: string;
+      prompts?: string[];
+      resources?: string[];
+    };
     assert.equal(body.ok, true);
     assert.equal(body.transport, "http");
+    assert.ok(Array.isArray(body.prompts) && body.prompts.includes("delayed_vans_today"));
+    assert.ok(Array.isArray(body.resources) && body.resources.includes("ops://glossary"));
   });
 
   it("answers MCP initialize over Streamable HTTP", async () => {

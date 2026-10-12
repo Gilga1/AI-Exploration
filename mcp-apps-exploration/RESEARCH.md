@@ -79,6 +79,17 @@ This gallery’s map is a **self-contained canvas** so it works with empty CSP. 
 
 Claude, Claude Desktop, VS Code GitHub Copilot, Microsoft 365 Copilot, Goose, Postman, MCPJam, Archestra.AI (per overview; always re-check the client matrix).
 
+## Prompts vs resources vs app buttons
+
+| Primitive | Claude UX | Starts a model turn? |
+| --- | --- | --- |
+| `@mcp.prompt` / `registerPrompt` | + → Connectors → Add from server | Only after the user sends (often with a “go” on an attached pill) |
+| `registerResource` | Same + menu, attach as context | No — grounding only until the next user message |
+| `callServerTool` from the MCP App | In-iframe button | No |
+| `sendMessage` from the MCP App | In-iframe “ask Claude” | Yes |
+
+Prompts are user-controlled recipes. They cannot be fired from an MCP App button. Resources are documents, not Django queries. The gallery registers both so they can be tried in Claude next to the existing tools.
+
 ## What we are not claiming
 
 We did not attach this server to production Claude in this environment. The local preview host implements the same `ui/initialize` / `ui/request-display-mode` / `containerDimensions` contract so layout can be proven without Claude. The MCP process is Streamable HTTP (`POST /mcp`); Claude.ai uses a public tunnel as a custom connector, Claude Code uses `"type": "http"`, and Claude Desktop can reach the same endpoint through `mcp-remote` or a custom connector.

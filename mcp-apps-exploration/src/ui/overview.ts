@@ -37,6 +37,16 @@ export function renderOverview(root: HTMLElement, ctx: HostContext | undefined, 
       </ul>
     </article>
     <article class="card">
+      <p class="eyebrow">Prompts and resources (Claude + menu)</p>
+      <p>These are <strong>not</strong> app buttons. In Claude, click <code>+</code> → Connectors → Add from mcp-apps-exploration. Prompts attach as a recipe pill (then type “go”). Resources attach as read-only context.</p>
+      <ul class="tight">
+        <li><code>delayed_vans_today</code> — analog of “BUs with trade today”; calls <code>show_live_map</code>.</li>
+        <li><code>region_ops_report</code> — parameterized like weekly sales; asks for a region, calls the dashboard.</li>
+        <li><code>ops://glossary</code> and <code>ops://my-regions</code> — grounding docs (glossary + mock entitlements).</li>
+        <li><code>ops://snapshot/today</code> — frozen snapshot. Live UI still needs a tool.</li>
+      </ul>
+    </article>
+    <article class="card">
       <p class="eyebrow">Host log</p>
       <pre class="log">${log.slice(-8).join("\n") || "Waiting for host messages…"}</pre>
     </article>

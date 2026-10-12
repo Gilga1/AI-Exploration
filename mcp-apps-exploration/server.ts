@@ -3,6 +3,7 @@
  *
  * Pattern from the official MCP Apps build guide:
  * a tool with `_meta.ui.resourceUri` plus a `text/html;profile=mcp-app` resource.
+ * Prompts and read-only ops:// resources are registered via registerCatalog.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -18,6 +19,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import { registerCatalog } from "./src/catalog.ts";
 import { FLEET_SNAPSHOT } from "./src/mock-data.ts";
 
 const SERVER_FILE = fileURLToPath(import.meta.url);
@@ -154,6 +156,7 @@ export function createServer(): McpServer {
     }),
   );
 
+  registerCatalog(server);
   return server;
 }
 
@@ -185,7 +188,19 @@ export async function startHttpServer(
   });
 
   expressApp.get("/health", (_req, res) => {
-    res.json({ ok: true, transport: "http" });
+    res.json({
+      ok: true,
+      transport: "http",
+      prompts: ["open_gallery", "delayed_vans_today", "region_ops_report", "incident_playbook"],
+      resources: [
+        "ops://glossary",
+        "ops://my-regions",
+        "ops://dashboard-schema",
+        "ops://snapshot/today",
+        "ops://region/{region}",
+        "ui://mcp-apps-exploration/gallery.html",
+      ],
+    });
   });
 
   expressApp.all("/mcp", async (req, res) => {

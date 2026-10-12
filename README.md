@@ -100,9 +100,9 @@ python scripts/setup_env.py --extra dev
 
 **Branch:** `cursor/mcp-apps-exploration-ac82`
 
-A mocked but fully wired MCP Apps gallery for Claude: live fleet map, operations dashboard, bottom sheets / dialogs, and interaction controls. Layout is host-controlled (`containerDimensions` + `inline` / `fullscreen` / `pip`), so the chat-column screenshot is not a protocol width cap.
+A mocked but fully wired MCP Apps gallery for Claude: live fleet map, operations dashboard, bottom sheets / dialogs, and interaction controls. Layout is host-controlled (`containerDimensions` + `inline` / `fullscreen` / `pip`), so the chat-column screenshot is not a protocol width cap. The same server also exposes **MCP prompts** (named recipes in Claude’s + menu) and **read-only resources** (glossary, entitlements, frozen snapshot).
 
-**What it explores:** SEP-1865 UI resources, Claude design guidelines, CSP/sandbox limits, and which UX patterns actually feel native inside a conversation.
+**What it explores:** SEP-1865 UI resources, Claude design guidelines, CSP/sandbox limits, `prompts/list` + `resources/list` UX in Claude, and which UX patterns actually feel native inside a conversation.
 
 **Get started:**
 ```bash
