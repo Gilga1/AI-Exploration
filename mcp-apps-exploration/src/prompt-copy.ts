@@ -82,8 +82,27 @@ export function explainDashboardKpiPromptText(kpiId: string, label: string, valu
 3. Give one recommended action for ops.`;
 }
 
-export function explainDashboardRegionPromptText(region: string, onTimePct: number): string {
-  return `Explain the **${region}** row (${onTimePct}% on-time) on the operations dashboard and whether we should reroute vans.`;
+export function explainDashboardRegionPromptText(
+  region: string,
+  onTimePct: number,
+  volume: number,
+  incidents: number,
+): string {
+  return `Explain the **${region}** region on the operations dashboard (${onTimePct}% on-time, ${volume} stops, ${incidents} incidents) and whether we should reroute vans.`;
+}
+
+export function explainDashboardHourPromptText(hourLabel: number, volume: number): string {
+  return `Explain the **${hourLabel}:00** hourly volume bar (${volume} stops) on the operations dashboard and how it compares to the rest of today.`;
+}
+
+export function explainDashboardAlertPromptText(title: string, body: string, vehicleId?: string): string {
+  const van = vehicleId ? ` (${vehicleId})` : "";
+  return `Explain the **${title}**${van} alert on the operations dashboard: ${body}. Recommend one next action.`;
+}
+
+/** Short user turn after updateModelContext stages SQL/detail (Claude Dashboards handoff). */
+export function explainDashboardSelectionTriggerText(): string {
+  return "Explain the selected dashboard metric using the staged query and snapshot in context.";
 }
 
 export function promptTextForLauncher(id: PromptLauncherId, region = "SOMA"): string {

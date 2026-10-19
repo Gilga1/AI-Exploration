@@ -17,3 +17,19 @@ SELECT COUNT(*) AS open_incidents
 FROM ops_alerts
 WHERE resolved_at IS NULL AND severity IN ('warning', 'critical');`,
 };
+
+export function regionQueryBehind(region: string, onTimePct: number, volume: number): string {
+  return `-- ${region} desk rollup (mock)
+SELECT region, on_time_pct, stop_volume, open_incidents
+FROM region_daily_ops
+WHERE service_date = CURRENT_DATE AND region = '${region}';
+-- snapshot: on_time ${onTimePct}%, volume ${volume} stops`;
+}
+
+export function hourlyVolumeQueryBehind(hourLabel: number, volume: number): string {
+  return `-- Hourly volume (mock)
+SELECT hour_local, stop_count
+FROM hourly_stops
+WHERE service_date = CURRENT_DATE AND hour_local = ${hourLabel};
+-- snapshot: ${volume} stops`;
+}

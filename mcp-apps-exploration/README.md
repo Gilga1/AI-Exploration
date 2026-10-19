@@ -120,10 +120,12 @@ App buttons still use `callServerTool` / `sendMessage`. They do not invoke `prom
 | --- | --- |
 | `explore_mcp_apps` | Overview + host inspector |
 | `show_live_map` | Canvas live fleet map |
-| `show_operations_dashboard` | KPIs, charts, alerts (click KPI for mock query) |
+| `show_operations_dashboard` | KPIs, charts, alerts — click any section, then **Explain** (`ui/message`) |
 | `show_fleet_motion` | CSS motion explainer (Claude Motion pattern) |
 | `show_sheet_patterns` | Bottom sheet + dialog + chat handoff |
 | `show_interaction_controls` | Segmented, slider, toggles, carousel |
+
+**Dashboard Explain:** The app calls `sendMessage` on button click (with selection staged via `updateModelContext`). On **claude.ai** the host may still place text in the composer and require you to press Send ([anthropics/claude-ai-mcp#1111](https://github.com/anthropics/claude-ai-mcp/issues/1111)); Claude Desktop typically starts the turn immediately.
 
 ## Honest limits (Claude)
 

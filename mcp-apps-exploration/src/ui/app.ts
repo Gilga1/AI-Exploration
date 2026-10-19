@@ -5,12 +5,7 @@ import { renderOverview } from "./overview.ts";
 import { mountMap } from "./map.ts";
 import { renderDashboard } from "./dashboard.ts";
 import { renderMotion } from "./motion.ts";
-import {
-  explainDashboardKpiPromptText,
-  explainDashboardRegionPromptText,
-  promptTextForLauncher,
-  type PromptLauncherId,
-} from "../prompt-copy.ts";
+import { promptTextForLauncher, type PromptLauncherId } from "../prompt-copy.ts";
 import type { RegionName } from "../catalog.ts";
 import { renderModals, vehicleSheetHtml } from "./modals.ts";
 import { renderInteractions } from "./interactions.ts";
@@ -49,11 +44,23 @@ function applyChrome() {
   }`;
 }
 
-async function sendUserMessage(text: string) {
+async function sendUserMessage(text: string, stagedContext?: string) {
+  const caps = app.getHostCapabilities?.() as { message?: unknown; updateModelContext?: unknown } | undefined;
+  if (stagedContext && caps?.updateModelContext) {
+    pushLog("updateModelContext (dashboard selection)");
+    await safeHostCall("updateModelContext", () =>
+      app.updateModelContext({ content: [{ type: "text", text: stagedContext }] }),
+    );
+  }
+  if (!caps?.message) {
+    pushLog("sendMessage skipped: host lacks message capability");
+    return;
+  }
   pushLog(`sendMessage ${text.slice(0, 60)}…`);
-  await safeHostCall("sendMessage", () =>
-    app.sendMessage({ role: "user", content: [{ type: "text", text }] }),
-  );
+  await safeHostCall("sendMessage", async () => {
+    const result = await app.sendMessage({ role: "user", content: [{ type: "text", text }] });
+    if (result.isError) pushLog("sendMessage rejected by host");
+  });
 }
 
 function render() {
@@ -68,11 +75,8 @@ function render() {
     });
   if (view === "dashboard")
     renderDashboard(stage, snapshot, {
-      onExplainKpi: (id, label, value, unit) => {
-        void sendUserMessage(explainDashboardKpiPromptText(id, label, value, unit));
-      },
-      onExplainRegion: (region, onTimePct) => {
-        void sendUserMessage(explainDashboardRegionPromptText(region, onTimePct));
+      onExplain: (message, stagedContext) => {
+        void sendUserMessage(message, stagedContext);
       },
     });
   if (view === "motion") {

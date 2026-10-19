@@ -289,8 +289,16 @@ code { font-family: ui-monospace, monospace; font-size: 12px; }
   border-radius: var(--border-radius-md);
   padding: 8px 10px;
 }
-.kpi-click { cursor: pointer; }
-.kpi-click:focus-visible { outline: 2px solid var(--color-text-info); outline-offset: 2px; }
+.dash-select { cursor: pointer; }
+.dash-select:focus-visible { outline: 2px solid var(--color-text-info); outline-offset: 2px; }
+.dash-selected {
+  outline: 2px solid var(--color-text-info);
+  outline-offset: 2px;
+}
+.table-select tr.dash-select:hover td {
+  background: rgb(70 130 213 / 12%);
+}
+.bar-col.dash-select { border-radius: var(--border-radius-md); padding: 2px; }
 .query-behind pre { white-space: pre-wrap; }
 .btn-sm { padding: 4px 10px; font-size: 12px; }
 
