@@ -1,75 +1,37 @@
-# MCP Apps exploration
+# Fleet Ops (MCP Apps connector)
 
-Interactive MCP Apps gallery for **Claude** (and any MCP Apps host): live maps, dashboards, sheets/modals, and host-controlled layout.
+Territory Trade Report–style **custom connector** for Claude: mocked SF fleet ops with an interactive MCP App.
 
-This is an experiment with **mocked ops data**. It exists to answer two questions:
+This is **not** Claude Dashboards or Claude Motion. Those are Anthropic product features — see [`CLAUDE_PRODUCT.md`](./CLAUDE_PRODUCT.md).
 
-1. What rich UX is actually in-scope for MCP Apps?
-2. Is Claude’s chat column a hard width limit? **No.** Inline width is host-controlled; fullscreen is a first-class mode.
+## What you can test
 
-## Challenge the width screenshot
+| Layer | Behavior |
+| --- | --- |
+| **Domain tools** | `list_delayed_vans`, `filter_fleet`, `refresh_fleet_snapshot`, `get_vehicle_detail`, `get_region_summary` — data without (or with) UI |
+| **UI tools** | `open_fleet_ops`, `show_live_map`, `show_operations_dashboard`, … — open the iframe |
+| **In-app actions** | Filter / refresh / drill use **`callServerTool`** → **no Claude turn**, no Enter |
+| **Explain / Ask Claude** | Uses `sendMessage` → on **Claude Desktop only fills the composer**; you still press **Send** ([claude-ai-mcp#33](https://github.com/anthropics/claude-ai-mcp/issues/33)) |
+| **+ menu prompts / resources** | Same recipes as Territory Trade: trade-today, weekly region report, glossary, entitlements |
 
-The attached Claude screenshot is the **conversation column**, which is how Claude hosts **inline** apps. It is not the MCP Apps maximum.
-
-Evidence in this repo:
-
-- `src/host-context.ts` quotes the spec type: hosts send `containerDimensions.width` **or** `maxWidth`, plus `displayMode: "inline" | "fullscreen" | "pip"`.
-- `src/ui/styles.css` sizes the app at `width: 100%` — never `736px`.
-- The local host at `preview/index.html` mounts the same iframe at 320 / 560 / 736 / 960 / 1200 / 100% / fullscreen / PiP.
-- Claude Desktop has been **observed** at inline `width: 736`, `maxHeight: 5000`, modes `inline` + `fullscreen` ([ext-apps#688](https://github.com/modelcontextprotocol/ext-apps/issues/688)). That is a host choice. The spec initialize example even uses `width: 400`.
-- Official Claude design guidelines: apps always fill container width, design from **320px to fullscreen**, and request `ui/request-display-mode` for immersive work.
-
-PiP is in the SDK. Claude.ai currently does not advertise it and silently stays inline ([anthropics/claude-ai-mcp#60](https://github.com/anthropics/claude-ai-mcp/issues/60)).
-
-## Run the layout lab (no Claude required)
+## Run
 
 ```bash
 cd mcp-apps-exploration
 npm install
 npm test
-npm run preview
-```
-
-Open `http://localhost:4177/preview/index.html`. Change the width preset and display mode. The pill in the app should track the host’s reported width.
-
-## Run as an MCP server for Claude
-
-This server speaks **Streamable HTTP only** (no stdio). Claude loads the app HTML from `POST /mcp`; you do not host a separate frontend.
-
-```bash
 npm run build
 npm run serve          # http://127.0.0.1:3001/mcp
 ```
 
-Health check: `GET http://127.0.0.1:3001/health`
+Health: `GET http://127.0.0.1:3001/health`
 
-**Claude.ai:** tunnel `http://127.0.0.1:3001/mcp` (Cloudflare Tunnel, ngrok) and add a custom connector (paid plans).
-
-**Claude Code:**
-
-```bash
-claude mcp add --transport http mcp-apps-exploration http://127.0.0.1:3001/mcp
-```
-
-or in `.mcp.json`:
+**Claude Desktop:** bridge HTTP with `mcp-remote` (see below) or a custom connector URL.
 
 ```json
 {
   "mcpServers": {
-    "mcp-apps-exploration": {
-      "type": "http",
-      "url": "http://127.0.0.1:3001/mcp"
-    }
-  }
-}
-```
-
-**Claude Desktop:** Desktop’s JSON config still only launches stdio processes. Point it at this HTTP server with a bridge, or add the public tunnel as a custom connector:
-
-```json
-{
-  "mcpServers": {
-    "mcp-apps-exploration": {
+    "fleet-ops": {
       "command": "npx",
       "args": ["-y", "mcp-remote", "http://127.0.0.1:3001/mcp", "--transport", "http-only"]
     }
@@ -77,25 +39,41 @@ or in `.mcp.json`:
 }
 ```
 
-Then ask: “Open the MCP Apps gallery” or “Show the live fleet map”.
+Then ask: “Open Fleet Ops” or “Show delayed vans today.”
 
-## Tools
+## Prompts (+ → Connectors)
 
-| Tool | UI |
+| Prompt | Job |
 | --- | --- |
-| `explore_mcp_apps` | Overview + host inspector |
-| `show_live_map` | Canvas live fleet map |
-| `show_operations_dashboard` | KPIs, charts, alerts |
-| `show_sheet_patterns` | Bottom sheet + dialog + chat handoff |
-| `show_interaction_controls` | Segmented, slider, toggles, carousel |
+| `open_fleet_ops` | Open connector home |
+| `delayed_vans_today` | Trade-today analog: `list_delayed_vans` + map |
+| `region_ops_report` | Weekly report analog (region arg) |
+| `incident_playbook` | Sheets playbook |
+| `open_ops_board` | KPI board walkthrough |
+| `fleet_briefing_story` | CSS briefing POC (not Motion) |
 
-## Honest limits (Claude)
+## Resources
 
-- Sandboxed iframe, deny-by-default CSP. Third-party map tiles need `_meta.ui.csp`.
-- `frameDomains` (nested third-party iframes) is restricted in Claude.
-- Inline: auto-fit height, avoid nested vertical scroll; host owns vertical pan.
-- Prefer visible controls over menus; prefer sheets over floating dialogs.
-- Camera / mic / geolocation on mobile WebView: not available.
-- All UI↔host calls are auditable JSON-RPC. The app cannot see Claude’s DOM.
+| URI | Role |
+| --- | --- |
+| `ops://glossary` | Van / delayed / on-time labels |
+| `ops://my-regions` | Mock entitlements (SOMA + Mission) |
+| `ops://dashboard-schema` | How to read the ops board |
+| `ops://claude-product-notes` | Dashboards/Motion ≠ this connector |
+| `ops://snapshot/today` | Frozen snapshot |
+| `ops://region/{region}` | Region briefing |
 
-See `RESEARCH.md` for the full map of capabilities.
+## Layout lab (no Claude)
+
+```bash
+npm run preview
+```
+
+Open `http://localhost:4177/preview/index.html`.
+
+## Honest limits
+
+- Mock data only — no BigQuery / Salesforce.
+- Desktop `sendMessage` = composer prefill, not auto-send.
+- Briefing tab ≠ Claude Motion MP4.
+- See `RESEARCH.md` for MCP Apps host capabilities.

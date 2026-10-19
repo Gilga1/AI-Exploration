@@ -14,14 +14,37 @@ describe("MCP Apps wiring", () => {
     assert.match(server, /RESOURCE_MIME_TYPE/);
     assert.match(server, /show_live_map/);
     assert.match(server, /show_operations_dashboard/);
+    assert.match(server, /show_fleet_briefing/);
+    assert.match(server, /registerDomainTools/);
+    assert.match(server, /filter_fleet/);
     assert.match(server, /StreamableHTTPServerTransport/);
+    assert.match(server, /registerCatalog/);
     assert.doesNotMatch(server, /StdioServerTransport/);
+  });
+
+  it("ships named prompts and ops:// resources for the Claude + menu", () => {
+    const catalog = readFileSync(path.join(root, "src/catalog.ts"), "utf8");
+    assert.match(catalog, /registerPrompt/);
+    assert.match(catalog, /delayed_vans_today/);
+    assert.match(catalog, /region_ops_report/);
+    assert.match(catalog, /ops:\/\/glossary/);
+    assert.match(catalog, /ops:\/\/my-regions/);
+    assert.match(catalog, /ResourceTemplate/);
   });
 
   it("does not hardcode Claude chat-column width in the app CSS", () => {
     const css = readFileSync(path.join(root, "src/ui/styles.css"), "utf8");
     assert.match(css, /width: 100%/);
     assert.doesNotMatch(css, /width:\s*736px/);
+  });
+
+  it("keeps [hidden] overlays from painting over Sheets", () => {
+    const css = readFileSync(path.join(root, "src/ui/styles.css"), "utf8");
+    assert.match(css, /\[hidden\][\s\S]*display:\s*none\s*!important/);
+    const modals = readFileSync(path.join(root, "src/ui/modals.ts"), "utf8");
+    const sheetAt = modals.indexOf('id="sheet"');
+    const alertsAt = modals.indexOf("alert-list");
+    assert.ok(sheetAt > 0 && alertsAt > sheetAt, "sheet must sit above the alert list so it is on-screen");
   });
 
   it("asks the host for fullscreen instead of assuming inline-only", () => {

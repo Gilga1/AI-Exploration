@@ -4,13 +4,16 @@ import { applyHostVariables, applySafeArea, VIEWS, type ViewId, $ } from "./dom.
 import { renderOverview } from "./overview.ts";
 import { mountMap } from "./map.ts";
 import { renderDashboard } from "./dashboard.ts";
+import { renderMotion } from "./motion.ts";
+import { promptTextForLauncher, type PromptLauncherId } from "../prompt-copy.ts";
+import type { RegionName } from "../catalog.ts";
 import { renderModals, vehicleSheetHtml } from "./modals.ts";
 import { renderInteractions } from "./interactions.ts";
 import type { HostContext } from "../host-context.ts";
 import "./styles.css";
 
 const app = new App(
-  { name: "MCP Apps UX exploration", version: "0.1.0" },
+  { name: "Fleet Ops", version: "0.2.0" },
   { availableDisplayModes: ["inline", "fullscreen", "pip"] },
   { autoResize: true },
 );
@@ -41,24 +44,121 @@ function applyChrome() {
   }`;
 }
 
+/** Judgment path — Desktop only fills composer; user must Send. */
+async function sendUserMessage(text: string, stagedContext?: string) {
+  const caps = app.getHostCapabilities();
+  if (stagedContext && caps?.updateModelContext) {
+    pushLog("updateModelContext (selection)");
+    await safeHostCall("updateModelContext", () =>
+      app.updateModelContext({ content: [{ type: "text", text: stagedContext }] }),
+    );
+  }
+  if (!caps?.message) {
+    pushLog("sendMessage skipped: host lacks message capability");
+    return;
+  }
+  pushLog(`sendMessage → composer ${text.slice(0, 48)}…`);
+  await safeHostCall("sendMessage", async () => {
+    const result = await app.sendMessage({ role: "user", content: [{ type: "text", text }] });
+    if (result.isError) pushLog("sendMessage rejected by host");
+  });
+}
+
+/** Instant path — no Claude turn. */
+async function callTool(name: string, args: Record<string, unknown> = {}) {
+  pushLog(`callServerTool ${name} ${JSON.stringify(args)}`);
+  const caps = app.getHostCapabilities();
+  if (!caps?.serverTools) {
+    pushLog("callServerTool skipped: host lacks serverTools");
+    return;
+  }
+  await safeHostCall("callServerTool", async () => {
+    const result = await app.callServerTool({ name, arguments: args });
+    applyToolPayload(result);
+  });
+}
+
+function applyToolPayload(result: {
+  content?: Array<{ type: string; text?: string }>;
+  structuredContent?: unknown;
+}) {
+  const structured = result.structuredContent as
+    | (Partial<FleetSnapshot> & {
+        view?: ViewId;
+        focusVehicleId?: string;
+        vehicleDetail?: {
+          found: boolean;
+          vehicle?: Vehicle;
+          region?: string;
+          alerts?: Array<{ title: string; body: string }>;
+        };
+      })
+    | undefined;
+
+  if (structured?.vehicleDetail && !Array.isArray(structured.vehicles)) {
+    const sheet = document.getElementById("map-sheet");
+    const d = structured.vehicleDetail;
+    if (sheet && d.found && d.vehicle) {
+      sheet.hidden = false;
+      sheet.innerHTML = `${vehicleSheetHtml(d.vehicle)}
+        <p class="caption">Region: ${d.region ?? "—"} · alerts: ${d.alerts?.length ?? 0}</p>
+        <pre class="log">${JSON.stringify(d, null, 2)}</pre>
+        <div class="actions">
+          <button type="button" class="btn ghost" data-chat-vehicle="${d.vehicle.id}">Ask Claude (composer)</button>
+        </div>`;
+    }
+    pushLog(`vehicle detail ${structured.focusVehicleId ?? ""}`);
+    return;
+  }
+
+  if (structured && Array.isArray(structured.vehicles)) {
+    snapshot = parseSnapshot(structured);
+  }
+  if (structured?.view && VIEWS.some((v) => v.id === structured.view)) {
+    view = structured.view;
+    document.querySelectorAll(".tabs button").forEach((btn) => {
+      btn.classList.toggle("on", (btn as HTMLElement).dataset.view === view);
+    });
+  }
+  render();
+}
+
 function render() {
   applyChrome();
   stopMap?.();
   stopMap = undefined;
   const stage = $("stage");
   const ctx = hostContext();
-  if (view === "overview") renderOverview(stage, ctx, log);
-  if (view === "dashboard") renderDashboard(stage, snapshot);
+  if (view === "overview")
+    renderOverview(stage, ctx, log, (id: PromptLauncherId, region?: RegionName) => {
+      void sendUserMessage(promptTextForLauncher(id, region ?? "SOMA"));
+    });
+  if (view === "dashboard")
+    renderDashboard(stage, snapshot, {
+      onExplain: (message, stagedContext) => {
+        void sendUserMessage(message, stagedContext);
+      },
+      onRefresh: () => {
+        void callTool("refresh_fleet_snapshot");
+      },
+      onFilterRegion: (region) => {
+        void callTool("filter_fleet", {
+          region,
+          status: "all",
+          view: "dashboard",
+        });
+      },
+    });
+  if (view === "motion") {
+    renderMotion(stage, snapshot, (text) => {
+      void sendUserMessage(text);
+    });
+  }
   if (view === "modals") {
     renderModals(stage, snapshot.alerts, async (kind, alert) => {
       pushLog(`modal action ${kind}`);
       if (kind === "chat") {
-        await safeHostCall("sendMessage", () =>
-          app.sendMessage({
-            role: "user",
-            content: [{ type: "text", text: `Please help with: ${alert?.title}. ${alert?.body}` }],
-          }),
-        );
+        await sendUserMessage(`Please help with: ${alert?.title}. ${alert?.body}`);
       } else {
         await safeHostCall("updateModelContext", () =>
           app.updateModelContext({
@@ -70,41 +170,58 @@ function render() {
     });
   }
   if (view === "interact") {
-    renderInteractions(
-      stage,
-      async (text) => {
-        pushLog(`sendMessage ${text}`);
-        await safeHostCall("sendMessage", () =>
-          app.sendMessage({ role: "user", content: [{ type: "text", text }] }),
-        );
+    renderInteractions(stage, {
+      onApplyFilters: (payload) => {
+        void callTool("filter_fleet", {
+          status: payload.status,
+          region: "all",
+          sla_target: payload.sla,
+          view: "map",
+        });
       },
-      async (payload) => {
-        pushLog(`updateModelContext ${JSON.stringify(payload)}`);
-        await safeHostCall("updateModelContext", () =>
-          app.updateModelContext({
-            content: [{ type: "text", text: `Filters applied: ${JSON.stringify(payload)}` }],
-            structuredContent: payload,
-          }),
-        );
+      onAskClaude: (text) => {
+        void sendUserMessage(text);
       },
-    );
+    });
   }
   if (view === "map") {
-    stage.innerHTML = `<div id="map-root"></div><div id="map-sheet" class="sheet" hidden></div>`;
+    stage.innerHTML = `
+      <div class="actions sticky map-toolbar">
+        <button type="button" class="btn ghost" data-map-filter="all">All</button>
+        <button type="button" class="btn ghost" data-map-filter="delayed">Delayed</button>
+        <button type="button" class="btn ghost" data-map-filter="en_route">En route</button>
+        <button type="button" class="btn" data-map-refresh>Refresh</button>
+      </div>
+      <div id="map-root"></div>
+      <div id="map-sheet" class="sheet" hidden></div>`;
+    stage.querySelector("[data-map-refresh]")?.addEventListener("click", () => {
+      void callTool("refresh_fleet_snapshot");
+    });
+    stage.querySelectorAll("[data-map-filter]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        void callTool("filter_fleet", {
+          status: (btn as HTMLElement).dataset.mapFilter ?? "all",
+          region: "all",
+          view: "map",
+        });
+      });
+    });
     stopMap = mountMap($("map-root"), snapshot, (vehicle: Vehicle) => {
       const sheet = $("map-sheet");
       sheet.hidden = false;
-      sheet.innerHTML = vehicleSheetHtml(vehicle);
+      sheet.innerHTML = `${vehicleSheetHtml(vehicle)}
+        <div class="actions">
+          <button type="button" class="btn" data-drill="${vehicle.id}">Server detail (no Claude)</button>
+        </div>`;
     });
     $("map-sheet").addEventListener("click", async (e) => {
       const t = e.target as HTMLElement;
+      if (t.dataset.drill) {
+        await callTool("get_vehicle_detail", { vehicle_id: t.dataset.drill });
+        return;
+      }
       if (t.dataset.chatVehicle) {
-        await safeHostCall("sendMessage", () =>
-          app.sendMessage({
-            role: "user",
-            content: [{ type: "text", text: `What should we do about ${t.dataset.chatVehicle}?` }],
-          }),
-        );
+        await sendUserMessage(`What should we do about ${t.dataset.chatVehicle}?`);
       }
     });
   }
@@ -150,18 +267,7 @@ app.ontoolinput = (params) => {
 };
 
 app.ontoolresult = (result) => {
-  const structured = (result as { structuredContent?: unknown }).structuredContent;
-  snapshot = parseSnapshot(structured ?? extractJson(result));
-  const text = result.content?.find((c) => c.type === "text");
-  if (text && "text" in text) {
-    try {
-      const parsed = JSON.parse(text.text) as { view?: ViewId };
-      if (parsed.view) setView(parsed.view);
-    } catch {
-      /* tool text is human copy */
-    }
-  }
-  render();
+  applyToolPayload(result as { content?: Array<{ type: string; text?: string }>; structuredContent?: unknown });
 };
 
 async function safeHostCall(label: string, fn: () => Promise<unknown>) {
@@ -169,16 +275,6 @@ async function safeHostCall(label: string, fn: () => Promise<unknown>) {
     await fn();
   } catch (err) {
     pushLog(`${label} skipped: ${err instanceof Error ? err.message : String(err)}`);
-  }
-}
-
-function extractJson(result: { content?: Array<{ type: string; text?: string }> }): unknown {
-  const block = result.content?.find((c) => c.type === "text");
-  if (!block?.text) return undefined;
-  try {
-    return JSON.parse(block.text);
-  } catch {
-    return undefined;
   }
 }
 

@@ -31,6 +31,12 @@
 
 * { box-sizing: border-box; }
 
+/* Author `display: grid` on .dialog-root beats the UA [hidden] rule.
+   Without this, the empty confirm dialog paints a gray card over Sheets. */
+[hidden] {
+  display: none !important;
+}
+
 html, body {
   margin: 0;
   min-height: 100%;
@@ -211,6 +217,10 @@ body.fullscreen .map-shell { height: min(70vh, 720px); }
   border-radius: 16px 16px 0 0;
   padding: 8px 14px 14px;
   box-shadow: var(--shadow-md);
+  scroll-margin-top: 8px;
+}
+#stage .sheet {
+  margin-top: 4px;
 }
 .sheet-handle {
   width: 36px;
@@ -259,3 +269,111 @@ body.fullscreen .map-shell { height: min(70vh, 720px); }
   gap: 4px;
 }
 code { font-family: ui-monospace, monospace; font-size: 12px; }
+
+.prompt-grid { display: grid; gap: 10px; margin-top: 10px; }
+.prompt-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-top: 0.5px solid var(--color-border-tertiary);
+}
+.prompt-row:first-child { border-top: 0; padding-top: 0; }
+.prompt-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.prompt-region {
+  background: var(--color-background-tertiary);
+  color: inherit;
+  border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--border-radius-md);
+  padding: 8px 10px;
+}
+.dash-select { cursor: pointer; }
+.dash-select:focus-visible { outline: 2px solid var(--color-text-info); outline-offset: 2px; }
+.dash-selected {
+  outline: 2px solid var(--color-text-info);
+  outline-offset: 2px;
+}
+.table-select tr.dash-select:hover td {
+  background: rgb(70 130 213 / 12%);
+}
+.bar-col.dash-select { border-radius: var(--border-radius-md); padding: 2px; }
+.query-behind pre { white-space: pre-wrap; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+
+.motion-stage { overflow: hidden; }
+.motion-scene {
+  position: relative;
+  min-height: 200px;
+  padding: 12px 8px 48px;
+}
+.motion-title {
+  font-size: var(--font-heading-lg-size);
+  margin: 0 0 12px;
+  animation: motion-fade 0.6s ease both;
+}
+.motion-stat {
+  margin: 0 0 8px;
+  opacity: 0;
+  animation: motion-rise 0.7s ease forwards;
+}
+.motion-stat[data-step="1"] { animation-delay: 0.4s; }
+.motion-stat[data-step="2"] { animation-delay: 1.2s; }
+.motion-stat[data-step="3"] { animation-delay: 2s; }
+.motion-num { font-size: var(--font-heading-xl-size); color: var(--color-text-info); }
+.motion-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 36px;
+  height: 4px;
+  background: var(--color-border-tertiary);
+  border-radius: 99px;
+}
+.motion-van {
+  position: absolute;
+  top: -5px;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: #4682d5;
+  animation: motion-drive 8s linear infinite;
+}
+.motion-van.v1 { animation-delay: 0s; }
+.motion-van.v2 { animation-delay: 2.5s; background: #a87829; }
+.motion-van.v3 { animation-delay: 5s; background: #ee8884; }
+.motion-bars {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  gap: 4px;
+  align-items: flex-end;
+  height: 48px;
+}
+.motion-bar {
+  width: 8px;
+  height: var(--h);
+  background: var(--color-text-info);
+  border-radius: 2px 2px 0 0;
+  opacity: 0;
+  animation: motion-bar-in 0.5s ease forwards;
+  animation-delay: var(--d);
+}
+@keyframes motion-fade {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes motion-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes motion-drive {
+  from { left: 0; }
+  to { left: calc(100% - 14px); }
+}
+@keyframes motion-bar-in {
+  from { opacity: 0; transform: scaleY(0.2); }
+  to { opacity: 0.85; transform: scaleY(1); }
+}

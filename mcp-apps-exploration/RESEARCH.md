@@ -79,6 +79,17 @@ This gallery’s map is a **self-contained canvas** so it works with empty CSP. 
 
 Claude, Claude Desktop, VS Code GitHub Copilot, Microsoft 365 Copilot, Goose, Postman, MCPJam, Archestra.AI (per overview; always re-check the client matrix).
 
+## Prompts vs resources vs app buttons
+
+| Primitive | Claude UX | Starts a model turn? |
+| --- | --- | --- |
+| `@mcp.prompt` / `registerPrompt` | + → Connectors → Add from server | Only after the user sends (often with a “go” on an attached pill) |
+| `registerResource` | Same + menu, attach as context | No — grounding only until the next user message |
+| `callServerTool` from the MCP App | In-iframe button | No |
+| `sendMessage` from the MCP App | In-iframe “ask Claude” / **Run now** on Overview | Yes |
+
+MCP `prompts/get` is still only available to the host via the + menu; Overview **Run now** injects the same text via `ui/message`. On **Claude Desktop**, that only prefills the composer (press Send). Prefer **`callServerTool`** for filter / refresh / drill so the app updates without a model turn. Claude Dashboards / Motion are separate Anthropic products — see `CLAUDE_PRODUCT.md`.
+
 ## What we are not claiming
 
 We did not attach this server to production Claude in this environment. The local preview host implements the same `ui/initialize` / `ui/request-display-mode` / `containerDimensions` contract so layout can be proven without Claude. The MCP process is Streamable HTTP (`POST /mcp`); Claude.ai uses a public tunnel as a custom connector, Claude Code uses `"type": "http"`, and Claude Desktop can reach the same endpoint through `mcp-remote` or a custom connector.

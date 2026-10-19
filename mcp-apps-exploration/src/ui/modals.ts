@@ -29,6 +29,15 @@ export function renderModals(
         <button class="btn ghost" data-open="chat">Ask Claude to reroute</button>
       </article>
     </div>
+    <div id="sheet" class="sheet" hidden>
+      <div class="sheet-handle"></div>
+      <div id="sheet-body"></div>
+    </div>
+    <div id="dialog-root" class="dialog-root" hidden>
+      <div class="dialog" role="dialog" aria-modal="true">
+        <div id="dialog-body"></div>
+      </div>
+    </div>
     <div class="alert-list">
       ${alerts
         .map(
@@ -45,15 +54,6 @@ export function renderModals(
         )
         .join("")}
     </div>
-    <div id="sheet" class="sheet" hidden>
-      <div class="sheet-handle"></div>
-      <div id="sheet-body"></div>
-    </div>
-    <div id="dialog-root" class="dialog-root" hidden>
-      <div class="dialog" role="dialog" aria-modal="true">
-        <div id="dialog-body"></div>
-      </div>
-    </div>
   `;
 
   const sheet = root.querySelector("#sheet") as HTMLElement;
@@ -61,7 +61,13 @@ export function renderModals(
   const dialogRoot = root.querySelector("#dialog-root") as HTMLElement;
   const dialogBody = root.querySelector("#dialog-body") as HTMLElement;
 
+  const closeOverlays = () => {
+    sheet.hidden = true;
+    dialogRoot.hidden = true;
+  };
+
   const fillSheet = (alert = alerts[0]) => {
+    dialogRoot.hidden = true;
     sheetBody.innerHTML = `
       <p class="eyebrow">Reroute</p>
       <h3>${alert.title}</h3>
@@ -75,9 +81,11 @@ export function renderModals(
       </div>
     `;
     sheet.hidden = false;
+    sheet.scrollIntoView({ block: "nearest" });
   };
 
   const fillDialog = (alert = alerts.find((a) => a.severity === "critical") ?? alerts[0]) => {
+    sheet.hidden = true;
     dialogBody.innerHTML = `
       <p class="eyebrow">Confirm</p>
       <h3>Release ${alert.vehicleId ?? "van"} to customer dock?</h3>
@@ -102,8 +110,7 @@ export function renderModals(
     if (t.dataset.close === "dialog") dialogRoot.hidden = true;
     if (t.dataset.confirm) {
       onAction(t.dataset.confirm, alerts[0]);
-      sheet.hidden = true;
-      dialogRoot.hidden = true;
+      closeOverlays();
     }
   });
 }
