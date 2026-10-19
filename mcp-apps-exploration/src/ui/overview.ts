@@ -18,9 +18,9 @@ export function renderOverview(
         : "host-controlled";
   root.innerHTML = `
     <article class="hero card">
-      <p class="eyebrow">Width is not a protocol constant</p>
-      <h2>This app fills its host container.</h2>
-      <p>The screenshot of Claude's chat column is the <em>inline</em> host layout, not an MCP Apps maximum. The spec gives the host <code>containerDimensions.width</code> or <code>maxWidth</code>, plus <code>inline</code>, <code>fullscreen</code>, and <code>pip</code>.</p>
+      <p class="eyebrow">Fleet Ops · Territory Trade analog</p>
+      <h2>Connector home — not Claude Dashboards/Motion.</h2>
+      <p>This MCP App is a <strong>custom connector</strong>: tools + prompts + resources + rich UI. In-app <strong>filter / refresh / drill</strong> use <code>callServerTool</code> (no Send). <strong>Explain</strong> fills the Desktop composer — you press Send.</p>
       <dl class="facts">
         <div><dt>Display mode</dt><dd id="fact-mode">${ctx?.displayMode ?? "unknown"}</dd></div>
         <div><dt>Available modes</dt><dd>${(ctx?.availableDisplayModes ?? []).join(", ") || "unknown"}</dd></div>
@@ -32,21 +32,18 @@ export function renderOverview(
         <button class="btn ghost" data-mode="inline">Request inline</button>
         <button class="btn ghost" data-mode="pip">Request PiP</button>
       </div>
-      <p class="caption">Hosts may refuse a mode. Claude currently advertises inline + fullscreen; PiP is in the spec and SDK but is not offered on claude.ai yet.</p>
     </article>
     <article class="card">
-      <p class="eyebrow">What MCP Apps can do</p>
+      <p class="eyebrow">Domain tools (chat or callServerTool)</p>
       <ul class="tight">
-        <li>Render sandboxed HTML with bidirectional JSON-RPC.</li>
-        <li>Call server tools, send chat messages, and update model context.</li>
-        <li>Open links, download files, and optionally sample the host LLM.</li>
-        <li>Theme from host CSS variables so the UI matches Claude.</li>
-        <li>Load maps/tiles only after declaring CSP <code>connectDomains</code> / <code>resourceDomains</code>.</li>
+        <li><code>list_delayed_vans</code> — trade-today table (no UI).</li>
+        <li><code>filter_fleet</code> / <code>refresh_fleet_snapshot</code> — instant UI updates from the app.</li>
+        <li><code>get_vehicle_detail</code> / <code>get_region_summary</code> — drill-down.</li>
       </ul>
     </article>
     <article class="card">
-      <p class="eyebrow">Claude Dashboards & Motion</p>
-      <p>See the <strong>Dashboard</strong> tab for KPI query transparency, or <strong>Motion</strong> for a code-built explainer. Attach <code>ops://claude-artifacts-guide</code> from <code>+</code> → Connectors for product notes.</p>
+      <p class="eyebrow">Claude product features</p>
+      <p>Real <strong>Dashboards</strong> / <strong>Motion</strong> live in Claude Artifacts — attach <code>ops://claude-product-notes</code> or read <code>CLAUDE_PRODUCT.md</code>. The Briefing tab here is a CSS POC only.</p>
     </article>
     <article class="card">
       <p class="eyebrow">Host log</p>

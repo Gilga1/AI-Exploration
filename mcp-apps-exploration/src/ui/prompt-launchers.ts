@@ -8,35 +8,35 @@ const LAUNCHERS: {
   needsRegion?: boolean;
 }[] = [
   {
-    id: "open_gallery",
-    title: "Open gallery",
-    blurb: "Host inspector + offer map or dashboard.",
+    id: "open_fleet_ops",
+    title: "Open Fleet Ops",
+    blurb: "Connector home · host inspector.",
   },
   {
     id: "delayed_vans_today",
     title: "Delayed vans today",
-    blurb: "Trade-today analog · opens live map.",
+    blurb: "Trade-today analog · list + map.",
   },
   {
     id: "region_ops_report",
     title: "Region ops report",
-    blurb: "Parameterized weekly-style report.",
+    blurb: "Weekly report analog · pick region.",
     needsRegion: true,
   },
   {
     id: "incident_playbook",
     title: "Incident playbook",
-    blurb: "Sheets view + critical alert walkthrough.",
+    blurb: "Sheets · confirm in-app.",
   },
   {
-    id: "open_ops_dashboard",
-    title: "Claude Dashboard-style",
-    blurb: "KPI dashboard with query transparency.",
+    id: "open_ops_board",
+    title: "Ops board walkthrough",
+    blurb: "KPI board (not Claude Dashboards).",
   },
   {
-    id: "animate_fleet_briefing",
-    title: "Claude Motion-style",
-    blurb: "30s code-built fleet explainer.",
+    id: "fleet_briefing_story",
+    title: "Briefing story",
+    blurb: "CSS scene (not Claude Motion).",
   },
 ];
 
@@ -47,10 +47,10 @@ export function renderPromptLaunchers(
   const host = document.createElement("article");
   host.className = "card";
   host.innerHTML = `
-    <p class="eyebrow">Run in Claude (instant)</p>
-    <p>These buttons call <code>ui/message</code> with the same recipes as the <strong>+ → Connectors</strong> prompts — no extra “go” step.</p>
+    <p class="eyebrow">Recipes (fill composer)</p>
+    <p>Same text as <strong>+ → Connectors</strong> prompts. On Claude Desktop, <code>sendMessage</code> only fills the composer — press <strong>Send</strong>.</p>
     <div class="prompt-grid" role="list"></div>
-    <p class="caption">Resources (<code>ops://glossary</code>, etc.) still attach from the + menu for grounding.</p>
+    <p class="caption">Filters / refresh / drill-down use <code>callServerTool</code> and do <em>not</em> need Send.</p>
   `;
   const grid = host.querySelector(".prompt-grid") as HTMLElement;
 

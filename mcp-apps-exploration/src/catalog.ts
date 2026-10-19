@@ -11,11 +11,11 @@ import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { FLEET_SNAPSHOT, type RegionRow } from "./mock-data.ts";
 import {
-  animateFleetBriefingPromptText,
   delayedVansTodayPromptText,
+  fleetBriefingStoryPromptText,
   incidentPlaybookPromptText,
-  openGalleryPromptText,
-  openOpsDashboardPromptText,
+  openFleetOpsPromptText,
+  openOpsBoardPromptText,
   regionOpsReportPromptText,
 } from "./prompt-copy.ts";
 
@@ -26,20 +26,18 @@ export const GLOSSARY_URI = "ops://glossary";
 export const MY_REGIONS_URI = "ops://my-regions";
 export const DASHBOARD_SCHEMA_URI = "ops://dashboard-schema";
 export const TODAY_SNAPSHOT_URI = "ops://snapshot/today";
-export const CLAUDE_ARTIFACTS_URI = "ops://claude-artifacts-guide";
+export const CLAUDE_PRODUCT_URI = "ops://claude-product-notes";
+/** @deprecated use CLAUDE_PRODUCT_URI */
+export const CLAUDE_ARTIFACTS_URI = CLAUDE_PRODUCT_URI;
 export const REGION_TEMPLATE = "ops://region/{region}";
 
-export const CLAUDE_ARTIFACTS_GUIDE_MD = `# Claude Dashboards & Motion (product notes)
+export const CLAUDE_PRODUCT_NOTES_MD = `# Claude product vs Fleet Ops MCP (short)
 
-This gallery mocks patterns from [Claude Dashboards and Motion](https://claude.com/resources/articles/dashboards-and-motion):
+Full write-up: \`CLAUDE_PRODUCT.md\` in the repo.
 
-| Product | What it does | How we simulate it here |
-| --- | --- | --- |
-| **Claude Dashboards** | Connect data platforms; ask in plain language; click a number to see the query; charts stay current. | \`show_operations_dashboard\` + KPI click → mock SQL in the app + \`sendMessage\` to explain. |
-| **Claude Motion** | Code-built animations (not video gen); export MP4 from Claude. | \`show_fleet_motion\` CSS scene + “rewrite explainer” hands off to chat. |
-| **Docs / Slides / Design** | Artifacts in chat. | Overview + sheets patterns; resources for grounding. |
-
-Enterprise: Dashboards and Motion may be off by default in Organization settings → Artifacts.
+- **Claude Dashboards / Motion** = Anthropic Artifacts products (data platforms, MP4). Try them *in Claude*, not via this connector.
+- **This connector** = Territory Trade–style Fleet Ops MCP App: tools, prompts, resources, in-app filter/refresh via \`callServerTool\`.
+- Desktop \`sendMessage\` only fills the composer — press Send ([claude-ai-mcp#33](https://github.com/anthropics/claude-ai-mcp/issues/33)).
 `;
 
 export const GLOSSARY_MD = `# Fleet glossary (mocked)
@@ -148,15 +146,14 @@ const vehicleArg = z
 
 export function registerCatalog(server: McpServer): void {
   server.registerPrompt(
-    "open_gallery",
+    "open_fleet_ops",
     {
-      title: "Open MCP Apps gallery",
-      description:
-        "Starter: open the interactive gallery (map, dashboard, sheets). Pick from Claude + → Connectors.",
+      title: "Open Fleet Ops",
+      description: "Territory Trade–style starter: open the Fleet Ops MCP App. + → Connectors.",
     },
     () => ({
-      description: "Open the MCP Apps gallery",
-      messages: [{ role: "user" as const, content: { type: "text" as const, text: openGalleryPromptText() } }],
+      description: "Open Fleet Ops",
+      messages: [{ role: "user" as const, content: { type: "text" as const, text: openFleetOpsPromptText() } }],
     }),
   );
 
@@ -164,8 +161,7 @@ export function registerCatalog(server: McpServer): void {
     "delayed_vans_today",
     {
       title: "Delayed vans today",
-      description:
-        "Analog of “BUs with trade today”: list delayed/critical vans and open the live map.",
+      description: "Analog of “BUs with trade today”: list_delayed_vans + live map.",
     },
     () => ({
       description: "List delayed vans and open the map",
@@ -179,8 +175,7 @@ export function registerCatalog(server: McpServer): void {
     "region_ops_report",
     {
       title: "Region ops report",
-      description:
-        "Parameterized weekly-style report for one region. Analog of weekly_sales_report(department).",
+      description: "Parameterized weekly-style report. Analog of weekly_sales_report(department).",
       argsSchema: { region: regionArg },
     },
     ({ region }) => ({
@@ -198,7 +193,7 @@ export function registerCatalog(server: McpServer): void {
     "incident_playbook",
     {
       title: "Incident playbook",
-      description: "Walk a delayed van or dock hold with sheets + a chat handoff.",
+      description: "Sheets + confirm/snooze in-app; Claude only for judgment.",
       argsSchema: { vehicle_id: vehicleArg },
     },
     ({ vehicle_id }) => ({
@@ -213,29 +208,29 @@ export function registerCatalog(server: McpServer): void {
   );
 
   server.registerPrompt(
-    "open_ops_dashboard",
+    "open_ops_board",
     {
-      title: "Claude Dashboard-style ops board",
-      description: "Open the KPI dashboard and explain mock queries behind each metric.",
+      title: "Open operations board",
+      description: "KPI board with mock query-behind. Not Claude Dashboards product.",
     },
     () => ({
-      description: "Operations dashboard with query transparency",
+      description: "Operations board walkthrough",
       messages: [
-        { role: "user" as const, content: { type: "text" as const, text: openOpsDashboardPromptText() } },
+        { role: "user" as const, content: { type: "text" as const, text: openOpsBoardPromptText() } },
       ],
     }),
   );
 
   server.registerPrompt(
-    "animate_fleet_briefing",
+    "fleet_briefing_story",
     {
-      title: "Claude Motion-style fleet explainer",
-      description: "Open the motion view and narrate a 30-second fleet briefing.",
+      title: "Fleet briefing story",
+      description: "CSS briefing POC — not Claude Motion / MP4.",
     },
     () => ({
-      description: "Animated fleet explainer",
+      description: "Fleet briefing narration",
       messages: [
-        { role: "user" as const, content: { type: "text" as const, text: animateFleetBriefingPromptText() } },
+        { role: "user" as const, content: { type: "text" as const, text: fleetBriefingStoryPromptText() } },
       ],
     }),
   );
@@ -280,15 +275,15 @@ export function registerCatalog(server: McpServer): void {
   );
 
   server.registerResource(
-    "claude-artifacts-guide",
-    CLAUDE_ARTIFACTS_URI,
+    "claude-product-notes",
+    CLAUDE_PRODUCT_URI,
     {
-      title: "Claude Dashboards & Motion guide",
-      description: "How this POC maps to Claude Dashboards, Motion, and artifact settings.",
+      title: "Claude product vs this connector",
+      description: "Dashboards/Motion are Claude products — not this MCP server. See CLAUDE_PRODUCT.md.",
       mimeType: "text/markdown",
     },
     async (uri) => ({
-      contents: [{ uri: uri.href, mimeType: "text/markdown", text: CLAUDE_ARTIFACTS_GUIDE_MD }],
+      contents: [{ uri: uri.href, mimeType: "text/markdown", text: CLAUDE_PRODUCT_NOTES_MD }],
     }),
   );
 

@@ -55,6 +55,6 @@ describe("HTTP MCP transport", () => {
     const payload = (await res.json()) as {
       result?: { serverInfo?: { name?: string } };
     };
-    assert.equal(payload.result?.serverInfo?.name, "mcp-apps-exploration");
+    assert.equal(payload.result?.serverInfo?.name, "fleet-ops");
   });
 });

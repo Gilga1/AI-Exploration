@@ -88,7 +88,7 @@ Claude, Claude Desktop, VS Code GitHub Copilot, Microsoft 365 Copilot, Goose, Po
 | `callServerTool` from the MCP App | In-iframe button | No |
 | `sendMessage` from the MCP App | In-iframe “ask Claude” / **Run now** on Overview | Yes |
 
-MCP `prompts/get` is still only available to the host via the + menu, but the **same recipe text** can be injected immediately with `ui/message`. This gallery does that for every named prompt on Overview, for dashboard KPI explainers, and for Motion handoffs. Resources remain attach-only grounding docs.
+MCP `prompts/get` is still only available to the host via the + menu; Overview **Run now** injects the same text via `ui/message`. On **Claude Desktop**, that only prefills the composer (press Send). Prefer **`callServerTool`** for filter / refresh / drill so the app updates without a model turn. Claude Dashboards / Motion are separate Anthropic products — see `CLAUDE_PRODUCT.md`.
 
 ## What we are not claiming
 

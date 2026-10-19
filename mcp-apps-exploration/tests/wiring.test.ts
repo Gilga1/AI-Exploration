@@ -14,7 +14,9 @@ describe("MCP Apps wiring", () => {
     assert.match(server, /RESOURCE_MIME_TYPE/);
     assert.match(server, /show_live_map/);
     assert.match(server, /show_operations_dashboard/);
-    assert.match(server, /show_fleet_motion/);
+    assert.match(server, /show_fleet_briefing/);
+    assert.match(server, /registerDomainTools/);
+    assert.match(server, /filter_fleet/);
     assert.match(server, /StreamableHTTPServerTransport/);
     assert.match(server, /registerCatalog/);
     assert.doesNotMatch(server, /StdioServerTransport/);

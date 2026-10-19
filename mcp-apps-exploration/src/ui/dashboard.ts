@@ -3,8 +3,12 @@ import type { Alert, FleetSnapshot } from "../mock-data.ts";
 import { formatDelta, sparkPath } from "./dom.ts";
 
 export type DashboardHandlers = {
-  /** Full message text for Claude (app may stage SQL separately). */
+  /** Judgment only — fills Claude composer on Desktop (press Send). */
   onExplain: (message: string, stagedContext?: string) => void;
+  /** Instant — callServerTool refresh_fleet_snapshot (no Claude turn). */
+  onRefresh?: () => void;
+  /** Instant — callServerTool filter_fleet by region. */
+  onFilterRegion?: (region: string) => void;
 };
 
 type Selection =
@@ -18,8 +22,13 @@ export function renderDashboard(root: HTMLElement, snapshot: FleetSnapshot, hand
   const maxHour = Math.max(...snapshot.hourlyVolume, 1);
   const refreshed = snapshot.generatedAt.slice(0, 16).replace("T", " ");
   root.innerHTML = `
-    <p class="lede">Claude Dashboards pattern: click any metric, region row, hourly bar, or alert to inspect it. Use <strong>Explain</strong> to hand off to Claude (<code>ui/message</code>).</p>
-    <p class="caption">Data refreshed ${refreshed} UTC (mock snapshot)</p>
+    <p class="lede">Ops board: click any metric to inspect the mock query. <strong>Refresh</strong> / region chips use tools (no Send). <strong>Explain</strong> is judgment-only (Desktop: composer → Send).</p>
+    <div class="actions sticky dash-toolbar">
+      <button type="button" class="btn" id="dash-refresh">Refresh data</button>
+      <button type="button" class="btn ghost" data-filter-region="all">All regions</button>
+      ${snapshot.regions.map((r) => `<button type="button" class="btn ghost" data-filter-region="${r.region}">${r.region}</button>`).join("")}
+    </div>
+    <p class="caption">Snapshot ${refreshed} UTC</p>
     <div class="kpi-grid">
       ${snapshot.kpis
         .map(
@@ -197,12 +206,19 @@ export function renderDashboard(root: HTMLElement, snapshot: FleetSnapshot, hand
     });
   });
 
+  root.querySelector("#dash-refresh")?.addEventListener("click", () => handlers?.onRefresh?.());
+  root.querySelectorAll("[data-filter-region]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      handlers?.onFilterRegion?.((btn as HTMLElement).dataset.filterRegion ?? "all");
+    });
+  });
+
   root.querySelector("#selection-explain")?.addEventListener("click", () => {
     if (!selection || !handlers) return;
     const staged = `${titleEl.textContent}\n\n${summaryEl.textContent}\n\n${queryEl.textContent}`;
     let message = "";
     if (selection.kind === "kpi") {
-      message = `Explain the **${selection.label}** KPI (${selection.value}${selection.unit}) on the operations dashboard.`;
+      message = `Explain the **${selection.label}** KPI (${selection.value}${selection.unit}) on the operations board.`;
     } else if (selection.kind === "region") {
       message = `Explain **${selection.region}** (${selection.onTimePct}% on-time, ${selection.volume} stops, ${selection.incidents} incidents).`;
     } else if (selection.kind === "hour") {

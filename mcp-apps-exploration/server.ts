@@ -20,7 +20,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { registerCatalog } from "./src/catalog.ts";
-import { FLEET_SNAPSHOT } from "./src/mock-data.ts";
+import { registerDomainTools, getLiveSnapshot } from "./src/domain-tools.ts";
 
 const SERVER_FILE = fileURLToPath(import.meta.url);
 const ROOT = path.dirname(SERVER_FILE);
@@ -30,12 +30,12 @@ const RESOURCE_URI = "ui://mcp-apps-exploration/gallery.html";
 const viewSchema = z
   .enum(["overview", "map", "dashboard", "motion", "modals", "interact"])
   .optional()
-  .describe("Which gallery surface to open first");
+  .describe("Which Fleet Ops surface to open first");
 
 export function createServer(): McpServer {
   const server = new McpServer({
-    name: "mcp-apps-exploration",
-    version: "0.1.0",
+    name: "fleet-ops",
+    version: "0.2.0",
   });
 
   const readHtml = async () => {
@@ -72,17 +72,42 @@ export function createServer(): McpServer {
   );
 
   const payloadFor = (view: z.infer<typeof viewSchema>) => ({
-    ...FLEET_SNAPSHOT,
+    ...getLiveSnapshot(),
     view: view ?? "overview",
   });
 
+  // UI tools (open MCP App). Domain data tools live in registerDomainTools.
+  registerAppTool(
+    server,
+    "open_fleet_ops",
+    {
+      title: "Open Fleet Ops",
+      description:
+        "Territory Trade–style connector home: host inspector, live map, ops board, sheets, and filters. Prefer this when the user wants the Fleet Ops app.",
+      inputSchema: { view: viewSchema },
+      _meta: { ui: { resourceUri: RESOURCE_URI } },
+    },
+    async ({ view }) => {
+      const payload = payloadFor(view);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ view: payload.view, city: payload.city, vans: payload.vehicles.length }),
+          },
+        ],
+        structuredContent: payload,
+      };
+    },
+  );
+
+  // Backward-compatible alias for older prompts / chats.
   registerAppTool(
     server,
     "explore_mcp_apps",
     {
-      title: "Explore MCP Apps UX",
-      description:
-        "Open the MCP Apps gallery: host-size inspector, live fleet map, dashboard, sheets/modals, and interaction controls. Use this whenever the user wants to see rich UI inside Claude.",
+      title: "Open Fleet Ops (alias)",
+      description: "Alias for open_fleet_ops. Prefer open_fleet_ops.",
       inputSchema: { view: viewSchema },
       _meta: { ui: { resourceUri: RESOURCE_URI } },
     },
@@ -105,7 +130,7 @@ export function createServer(): McpServer {
     "show_live_map",
     {
       title: "Show live fleet map",
-      description: "Render an interactive live map of mocked delivery vans. Pan, zoom, and inspect vehicles.",
+      description: "Open the live map of mocked delivery vans. Pan, zoom, filter, inspect — no Claude turn for map chrome.",
       _meta: { ui: { resourceUri: RESOURCE_URI } },
     },
     async () => ({
@@ -118,8 +143,9 @@ export function createServer(): McpServer {
     server,
     "show_operations_dashboard",
     {
-      title: "Show operations dashboard",
-      description: "Render KPI cards, hourly volume, regional meters, and incident cards from mocked ops data.",
+      title: "Show operations board",
+      description:
+        "Ops KPI board with mock query-behind-number. Refresh/filter via callServerTool; Explain only for Claude judgment.",
       _meta: { ui: { resourceUri: RESOURCE_URI } },
     },
     async () => ({
@@ -132,8 +158,8 @@ export function createServer(): McpServer {
     server,
     "show_sheet_patterns",
     {
-      title: "Show modal and sheet patterns",
-      description: "Demonstrate bottom sheets, in-iframe dialogs, and handing decisions back to Claude via ui/message.",
+      title: "Show incident sheets",
+      description: "Bottom sheets and confirm dialogs for incident playbook. Confirm/snooze stay in-app; judgment uses chat.",
       _meta: { ui: { resourceUri: RESOURCE_URI } },
     },
     async () => ({
@@ -144,11 +170,26 @@ export function createServer(): McpServer {
 
   registerAppTool(
     server,
+    "show_fleet_briefing",
+    {
+      title: "Show fleet briefing animation",
+      description:
+        "CSS briefing scene (POC only — not Claude Motion / MP4). See CLAUDE_PRODUCT.md.",
+      _meta: { ui: { resourceUri: RESOURCE_URI } },
+    },
+    async () => ({
+      content: [{ type: "text", text: JSON.stringify({ view: "motion" }) }],
+      structuredContent: payloadFor("motion"),
+    }),
+  );
+
+  // Alias kept so older prompts still work.
+  registerAppTool(
+    server,
     "show_fleet_motion",
     {
-      title: "Show fleet motion explainer",
-      description:
-        "Claude Motion-style: code-built animation summarizing on-time %, delays, and critical holds (mock data).",
+      title: "Show fleet briefing (alias)",
+      description: "Alias for show_fleet_briefing. Not Claude Motion.",
       _meta: { ui: { resourceUri: RESOURCE_URI } },
     },
     async () => ({
@@ -161,8 +202,8 @@ export function createServer(): McpServer {
     server,
     "show_interaction_controls",
     {
-      title: "Show interaction controls",
-      description: "Segmented filters, sliders, toggles, carousel, model-context updates, and chat handoff.",
+      title: "Show fleet filters",
+      description: "Segmented filters and SLA slider. Apply uses callServerTool; Ask Claude is judgment-only.",
       _meta: { ui: { resourceUri: RESOURCE_URI } },
     },
     async () => ({
@@ -171,6 +212,7 @@ export function createServer(): McpServer {
     }),
   );
 
+  registerDomainTools(server);
   registerCatalog(server);
   return server;
 }
@@ -196,7 +238,9 @@ export async function startHttpServer(
 
   expressApp.get("/", (_req, res) => {
     res.json({
-      name: "mcp-apps-exploration",
+      name: "fleet-ops",
+      role: "Territory Trade–style MCP Apps connector (mocked SF fleet)",
+      product_vs_mcp: "See CLAUDE_PRODUCT.md — Claude Dashboards/Motion are not this server.",
       transport: "streamable-http",
       mcp: "/mcp",
     });
@@ -206,19 +250,35 @@ export async function startHttpServer(
     res.json({
       ok: true,
       transport: "http",
+      connector: "fleet-ops",
       prompts: [
-        "animate_fleet_briefing",
         "delayed_vans_today",
+        "fleet_briefing_story",
         "incident_playbook",
-        "open_gallery",
-        "open_ops_dashboard",
+        "open_fleet_ops",
+        "open_ops_board",
         "region_ops_report",
+      ],
+      ui_tools: [
+        "open_fleet_ops",
+        "show_live_map",
+        "show_operations_dashboard",
+        "show_fleet_briefing",
+        "show_sheet_patterns",
+        "show_interaction_controls",
+      ],
+      domain_tools: [
+        "list_delayed_vans",
+        "refresh_fleet_snapshot",
+        "filter_fleet",
+        "get_vehicle_detail",
+        "get_region_summary",
       ],
       resources: [
         "ops://glossary",
         "ops://my-regions",
         "ops://dashboard-schema",
-        "ops://claude-artifacts-guide",
+        "ops://claude-product-notes",
         "ops://snapshot/today",
         "ops://region/{region}",
         "ui://mcp-apps-exploration/gallery.html",

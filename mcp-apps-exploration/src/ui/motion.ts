@@ -6,8 +6,8 @@ export function renderMotion(root: HTMLElement, snapshot: FleetSnapshot, onAsk: 
   const critical = snapshot.alerts.filter((a) => a.severity === "critical").length;
 
   root.innerHTML = `
-    <p class="lede">Claude Motion builds explainers as <strong>editable code</strong> in the artifact — not generated video. This mock plays a 30-second fleet briefing with text, bars, and van markers you can hand off to Claude.</p>
-    <article class="card motion-stage" aria-label="Fleet motion explainer">
+    <p class="lede"><strong>POC briefing only</strong> — CSS in this iframe. This is <em>not</em> Claude Motion (no MP4 export). For real Motion, use Claude Artifacts — see <code>CLAUDE_PRODUCT.md</code>.</p>
+    <article class="card motion-stage" aria-label="Fleet briefing scene">
       <div class="motion-scene">
         <p class="motion-title">Today's fleet pulse</p>
         <p class="motion-stat" data-step="1"><span class="motion-num">${onTime}%</span> on-time citywide</p>
@@ -25,20 +25,16 @@ export function renderMotion(root: HTMLElement, snapshot: FleetSnapshot, onAsk: 
             .join("")}
         </div>
       </div>
-      <p class="caption">Refreshed from snapshot ${snapshot.generatedAt.slice(0, 16).replace("T", " ")} UTC · MP4 export is a host feature; here we preview in CSS.</p>
+      <p class="caption">Mock snapshot ${snapshot.generatedAt.slice(0, 16).replace("T", " ")} UTC</p>
     </article>
     <div class="actions">
-      <button class="btn" id="motion-ask">Ask Claude to rewrite this explainer</button>
-      <button class="btn ghost" id="motion-dashboard">Jump to dashboard KPIs</button>
+      <button class="btn" id="motion-ask">Ask Claude to narrate (composer)</button>
     </div>
   `;
 
   root.querySelector("#motion-ask")?.addEventListener("click", () => {
     onAsk(
-      "Rewrite the fleet motion explainer: shorter copy, emphasize Mission delays, and suggest one reroute. Keep the MCP App on the motion view.",
+      "Narrate this fleet briefing scene: on-time trend, delayed vans, critical dock hold. Keep the app on the briefing view. Remind me this is not Claude Motion MP4.",
     );
-  });
-  root.querySelector("#motion-dashboard")?.addEventListener("click", () => {
-    onAsk("Open the operations dashboard and compare Mission on-time to the city average.");
   });
 }
