@@ -28,7 +28,7 @@ const DIST_DIR = path.join(ROOT, "dist");
 const RESOURCE_URI = "ui://mcp-apps-exploration/gallery.html";
 
 const viewSchema = z
-  .enum(["overview", "map", "dashboard", "modals", "interact"])
+  .enum(["overview", "map", "dashboard", "motion", "modals", "interact"])
   .optional()
   .describe("Which gallery surface to open first");
 
@@ -144,6 +144,21 @@ export function createServer(): McpServer {
 
   registerAppTool(
     server,
+    "show_fleet_motion",
+    {
+      title: "Show fleet motion explainer",
+      description:
+        "Claude Motion-style: code-built animation summarizing on-time %, delays, and critical holds (mock data).",
+      _meta: { ui: { resourceUri: RESOURCE_URI } },
+    },
+    async () => ({
+      content: [{ type: "text", text: JSON.stringify({ view: "motion" }) }],
+      structuredContent: payloadFor("motion"),
+    }),
+  );
+
+  registerAppTool(
+    server,
     "show_interaction_controls",
     {
       title: "Show interaction controls",
@@ -191,11 +206,19 @@ export async function startHttpServer(
     res.json({
       ok: true,
       transport: "http",
-      prompts: ["open_gallery", "delayed_vans_today", "region_ops_report", "incident_playbook"],
+      prompts: [
+        "animate_fleet_briefing",
+        "delayed_vans_today",
+        "incident_playbook",
+        "open_gallery",
+        "open_ops_dashboard",
+        "region_ops_report",
+      ],
       resources: [
         "ops://glossary",
         "ops://my-regions",
         "ops://dashboard-schema",
+        "ops://claude-artifacts-guide",
         "ops://snapshot/today",
         "ops://region/{region}",
         "ui://mcp-apps-exploration/gallery.html",

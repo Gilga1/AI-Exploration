@@ -1,9 +1,10 @@
-export type ViewId = "overview" | "map" | "dashboard" | "modals" | "interact";
+export type ViewId = "overview" | "map" | "dashboard" | "motion" | "modals" | "interact";
 
 export const VIEWS: { id: ViewId; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "map", label: "Live map" },
   { id: "dashboard", label: "Dashboard" },
+  { id: "motion", label: "Motion" },
   { id: "modals", label: "Sheets" },
   { id: "interact", label: "Controls" },
 ];

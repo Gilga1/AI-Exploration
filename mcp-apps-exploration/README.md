@@ -91,8 +91,12 @@ After the connector is connected, Claude does **not** auto-run these. Open a cha
 | `delayed_vans_today` | — | Analog of “BUs with trade today”: call `show_live_map`, table delayed vans |
 | `region_ops_report` | `region` | Analog of `weekly_sales_report(department)`: call dashboard, compare regions |
 | `incident_playbook` | optional `vehicle_id` | Open sheets view and walk an alert |
+| `open_ops_dashboard` | — | [Claude Dashboards](https://claude.com/resources/articles/dashboards-and-motion)-style KPI walkthrough |
+| `animate_fleet_briefing` | — | [Claude Motion](https://claude.com/resources/articles/dashboards-and-motion)-style code animation |
 
-Claude Desktop often attaches the prompt as a **file pill**. Type `go` and send.
+**Instant run:** On the gallery **Overview** tab, **Run now** sends the same text via `ui/message` (no extra “go” step). The + menu still works for attaching resources.
+
+Claude Desktop often attaches the prompt as a **file pill** when picked from +; in-app buttons skip that step.
 
 ### Resources (read-only context)
 
@@ -102,6 +106,7 @@ Claude Desktop often attaches the prompt as a **file pill**. Type `go` and send.
 | `ops://my-regions` | Mock post-auth entitlements (SOMA + Mission) |
 | `ops://dashboard-schema` | How to read KPI fields |
 | `ops://snapshot/today` | Frozen fleet table — not a live query |
+| `ops://claude-artifacts-guide` | How this POC maps to Claude Dashboards & Motion |
 | `ops://region/{region}` | Per-region briefing template |
 | `ui://mcp-apps-exploration/gallery.html` | MCP App HTML (host-loaded, not for the + menu) |
 
@@ -115,7 +120,8 @@ App buttons still use `callServerTool` / `sendMessage`. They do not invoke `prom
 | --- | --- |
 | `explore_mcp_apps` | Overview + host inspector |
 | `show_live_map` | Canvas live fleet map |
-| `show_operations_dashboard` | KPIs, charts, alerts |
+| `show_operations_dashboard` | KPIs, charts, alerts (click KPI for mock query) |
+| `show_fleet_motion` | CSS motion explainer (Claude Motion pattern) |
 | `show_sheet_patterns` | Bottom sheet + dialog + chat handoff |
 | `show_interaction_controls` | Segmented, slider, toggles, carousel |
 

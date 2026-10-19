@@ -4,6 +4,14 @@ import { applyHostVariables, applySafeArea, VIEWS, type ViewId, $ } from "./dom.
 import { renderOverview } from "./overview.ts";
 import { mountMap } from "./map.ts";
 import { renderDashboard } from "./dashboard.ts";
+import { renderMotion } from "./motion.ts";
+import {
+  explainDashboardKpiPromptText,
+  explainDashboardRegionPromptText,
+  promptTextForLauncher,
+  type PromptLauncherId,
+} from "../prompt-copy.ts";
+import type { RegionName } from "../catalog.ts";
 import { renderModals, vehicleSheetHtml } from "./modals.ts";
 import { renderInteractions } from "./interactions.ts";
 import type { HostContext } from "../host-context.ts";
@@ -41,14 +49,37 @@ function applyChrome() {
   }`;
 }
 
+async function sendUserMessage(text: string) {
+  pushLog(`sendMessage ${text.slice(0, 60)}…`);
+  await safeHostCall("sendMessage", () =>
+    app.sendMessage({ role: "user", content: [{ type: "text", text }] }),
+  );
+}
+
 function render() {
   applyChrome();
   stopMap?.();
   stopMap = undefined;
   const stage = $("stage");
   const ctx = hostContext();
-  if (view === "overview") renderOverview(stage, ctx, log);
-  if (view === "dashboard") renderDashboard(stage, snapshot);
+  if (view === "overview")
+    renderOverview(stage, ctx, log, (id: PromptLauncherId, region?: RegionName) => {
+      void sendUserMessage(promptTextForLauncher(id, region ?? "SOMA"));
+    });
+  if (view === "dashboard")
+    renderDashboard(stage, snapshot, {
+      onExplainKpi: (id, label, value, unit) => {
+        void sendUserMessage(explainDashboardKpiPromptText(id, label, value, unit));
+      },
+      onExplainRegion: (region, onTimePct) => {
+        void sendUserMessage(explainDashboardRegionPromptText(region, onTimePct));
+      },
+    });
+  if (view === "motion") {
+    renderMotion(stage, snapshot, (text) => {
+      void sendUserMessage(text);
+    });
+  }
   if (view === "modals") {
     renderModals(stage, snapshot.alerts, async (kind, alert) => {
       pushLog(`modal action ${kind}`);

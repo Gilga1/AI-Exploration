@@ -10,6 +10,14 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { FLEET_SNAPSHOT, type RegionRow } from "./mock-data.ts";
+import {
+  animateFleetBriefingPromptText,
+  delayedVansTodayPromptText,
+  incidentPlaybookPromptText,
+  openGalleryPromptText,
+  openOpsDashboardPromptText,
+  regionOpsReportPromptText,
+} from "./prompt-copy.ts";
 
 export const REGIONS = ["SOMA", "Mission", "Marina", "Sunset", "Richmond"] as const;
 export type RegionName = (typeof REGIONS)[number];
@@ -18,7 +26,21 @@ export const GLOSSARY_URI = "ops://glossary";
 export const MY_REGIONS_URI = "ops://my-regions";
 export const DASHBOARD_SCHEMA_URI = "ops://dashboard-schema";
 export const TODAY_SNAPSHOT_URI = "ops://snapshot/today";
+export const CLAUDE_ARTIFACTS_URI = "ops://claude-artifacts-guide";
 export const REGION_TEMPLATE = "ops://region/{region}";
+
+export const CLAUDE_ARTIFACTS_GUIDE_MD = `# Claude Dashboards & Motion (product notes)
+
+This gallery mocks patterns from [Claude Dashboards and Motion](https://claude.com/resources/articles/dashboards-and-motion):
+
+| Product | What it does | How we simulate it here |
+| --- | --- | --- |
+| **Claude Dashboards** | Connect data platforms; ask in plain language; click a number to see the query; charts stay current. | \`show_operations_dashboard\` + KPI click → mock SQL in the app + \`sendMessage\` to explain. |
+| **Claude Motion** | Code-built animations (not video gen); export MP4 from Claude. | \`show_fleet_motion\` CSS scene + “rewrite explainer” hands off to chat. |
+| **Docs / Slides / Design** | Artifacts in chat. | Overview + sheets patterns; resources for grounding. |
+
+Enterprise: Dashboards and Motion may be off by default in Organization settings → Artifacts.
+`;
 
 export const GLOSSARY_MD = `# Fleet glossary (mocked)
 
@@ -134,22 +156,7 @@ export function registerCatalog(server: McpServer): void {
     },
     () => ({
       description: "Open the MCP Apps gallery",
-      messages: [
-        {
-          role: "user" as const,
-          content: {
-            type: "text" as const,
-            text: `Open the MCP Apps exploration gallery.
-
-Follow these exact steps. Do not skip any.
-1. Call the \`explore_mcp_apps\` tool with view "overview".
-2. Tell me the host display mode and width the app reports.
-3. Offer to switch to the live map or operations dashboard.
-
-If the prompt attached as a file pill, treat this message as the user request.`,
-          },
-        },
-      ],
+      messages: [{ role: "user" as const, content: { type: "text" as const, text: openGalleryPromptText() } }],
     }),
   );
 
@@ -163,20 +170,7 @@ If the prompt attached as a file pill, treat this message as the user request.`,
     () => ({
       description: "List delayed vans and open the map",
       messages: [
-        {
-          role: "user" as const,
-          content: {
-            type: "text" as const,
-            text: `List vans with delay or a critical hold in the mocked San Francisco fleet today.
-
-Follow these exact steps. Do not skip any.
-1. If a glossary resource is attached, use those status labels. Otherwise call nothing extra for definitions.
-2. Call the \`show_live_map\` tool.
-3. From the tool result, list vans with status \`delayed\` and any critical alerts.
-4. Output a Markdown table: van id, driver, status, load, ETA minutes, and a one-line next action.
-5. Keep the MCP App on the map. Do not dump every lat/lng into chat.`,
-          },
-        },
+        { role: "user" as const, content: { type: "text" as const, text: delayedVansTodayPromptText() } },
       ],
     }),
   );
@@ -194,17 +188,7 @@ Follow these exact steps. Do not skip any.
       messages: [
         {
           role: "user" as const,
-          content: {
-            type: "text" as const,
-            text: `You are a senior operations analyst. Generate a region report for **${region}**.
-
-Follow these exact steps. Do not skip any.
-1. Call \`show_operations_dashboard\`.
-2. Use attached resources if present (\`ops://glossary\`, \`ops://dashboard-schema\`, \`ops://region/${region}\`).
-3. Compare ${region} on-time %, volume, and incidents against the other regions.
-4. Output a Markdown table of all regions, with ${region} first, plus a 3-bullet recommendation.
-5. Do not skip the tool call. Do not invent vans that are not in the tool result.`,
-          },
+          content: { type: "text" as const, text: regionOpsReportPromptText(region) },
         },
       ],
     }),
@@ -217,27 +201,43 @@ Follow these exact steps. Do not skip any.
       description: "Walk a delayed van or dock hold with sheets + a chat handoff.",
       argsSchema: { vehicle_id: vehicleArg },
     },
-    ({ vehicle_id }) => {
-      const focus = vehicle_id?.trim() || "the most severe open alert";
-      return {
-        description: `Incident playbook for ${focus}`,
-        messages: [
-          {
-            role: "user" as const,
-            content: {
-              type: "text" as const,
-              text: `Run the incident playbook for ${focus}.
+    ({ vehicle_id }) => ({
+      description: `Incident playbook for ${vehicle_id?.trim() || "open alert"}`,
+      messages: [
+        {
+          role: "user" as const,
+          content: { type: "text" as const, text: incidentPlaybookPromptText(vehicle_id) },
+        },
+      ],
+    }),
+  );
 
-Follow these exact steps. Do not skip any.
-1. Call \`show_sheet_patterns\` so the MCP App opens the sheets view.
-2. Identify the matching alert from the tool result.
-3. Recommend Confirm, Snooze, or Ask Claude — then ask me which to take.
-4. If I want Claude to help, wait; the app button already uses sendMessage. Do not re-call tools unless I ask.`,
-            },
-          },
-        ],
-      };
+  server.registerPrompt(
+    "open_ops_dashboard",
+    {
+      title: "Claude Dashboard-style ops board",
+      description: "Open the KPI dashboard and explain mock queries behind each metric.",
     },
+    () => ({
+      description: "Operations dashboard with query transparency",
+      messages: [
+        { role: "user" as const, content: { type: "text" as const, text: openOpsDashboardPromptText() } },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    "animate_fleet_briefing",
+    {
+      title: "Claude Motion-style fleet explainer",
+      description: "Open the motion view and narrate a 30-second fleet briefing.",
+    },
+    () => ({
+      description: "Animated fleet explainer",
+      messages: [
+        { role: "user" as const, content: { type: "text" as const, text: animateFleetBriefingPromptText() } },
+      ],
+    }),
   );
 
   server.registerResource(
@@ -276,6 +276,19 @@ Follow these exact steps. Do not skip any.
     },
     async (uri) => ({
       contents: [{ uri: uri.href, mimeType: "text/markdown", text: DASHBOARD_SCHEMA_MD }],
+    }),
+  );
+
+  server.registerResource(
+    "claude-artifacts-guide",
+    CLAUDE_ARTIFACTS_URI,
+    {
+      title: "Claude Dashboards & Motion guide",
+      description: "How this POC maps to Claude Dashboards, Motion, and artifact settings.",
+      mimeType: "text/markdown",
+    },
+    async (uri) => ({
+      contents: [{ uri: uri.href, mimeType: "text/markdown", text: CLAUDE_ARTIFACTS_GUIDE_MD }],
     }),
   );
 

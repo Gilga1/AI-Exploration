@@ -86,9 +86,9 @@ Claude, Claude Desktop, VS Code GitHub Copilot, Microsoft 365 Copilot, Goose, Po
 | `@mcp.prompt` / `registerPrompt` | + → Connectors → Add from server | Only after the user sends (often with a “go” on an attached pill) |
 | `registerResource` | Same + menu, attach as context | No — grounding only until the next user message |
 | `callServerTool` from the MCP App | In-iframe button | No |
-| `sendMessage` from the MCP App | In-iframe “ask Claude” | Yes |
+| `sendMessage` from the MCP App | In-iframe “ask Claude” / **Run now** on Overview | Yes |
 
-Prompts are user-controlled recipes. They cannot be fired from an MCP App button. Resources are documents, not Django queries. The gallery registers both so they can be tried in Claude next to the existing tools.
+MCP `prompts/get` is still only available to the host via the + menu, but the **same recipe text** can be injected immediately with `ui/message`. This gallery does that for every named prompt on Overview, for dashboard KPI explainers, and for Motion handoffs. Resources remain attach-only grounding docs.
 
 ## What we are not claiming
 

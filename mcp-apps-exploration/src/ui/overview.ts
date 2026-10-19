@@ -1,6 +1,14 @@
 import { describeDimensions, type HostContext } from "../host-context.ts";
+import type { PromptLauncherId } from "../prompt-copy.ts";
+import type { RegionName } from "../catalog.ts";
+import { renderPromptLaunchers } from "./prompt-launchers.ts";
 
-export function renderOverview(root: HTMLElement, ctx: HostContext | undefined, log: string[]) {
+export function renderOverview(
+  root: HTMLElement,
+  ctx: HostContext | undefined,
+  log: string[],
+  onLaunchPrompt?: (id: PromptLauncherId, region?: RegionName) => void,
+) {
   const dims = ctx?.containerDimensions;
   const widthText =
     dims && "width" in dims && typeof dims.width === "number"
@@ -37,18 +45,15 @@ export function renderOverview(root: HTMLElement, ctx: HostContext | undefined, 
       </ul>
     </article>
     <article class="card">
-      <p class="eyebrow">Prompts and resources (Claude + menu)</p>
-      <p>These are <strong>not</strong> app buttons. In Claude, click <code>+</code> → Connectors → Add from mcp-apps-exploration. Prompts attach as a recipe pill (then type “go”). Resources attach as read-only context.</p>
-      <ul class="tight">
-        <li><code>delayed_vans_today</code> — analog of “BUs with trade today”; calls <code>show_live_map</code>.</li>
-        <li><code>region_ops_report</code> — parameterized like weekly sales; asks for a region, calls the dashboard.</li>
-        <li><code>ops://glossary</code> and <code>ops://my-regions</code> — grounding docs (glossary + mock entitlements).</li>
-        <li><code>ops://snapshot/today</code> — frozen snapshot. Live UI still needs a tool.</li>
-      </ul>
+      <p class="eyebrow">Claude Dashboards & Motion</p>
+      <p>See the <strong>Dashboard</strong> tab for KPI query transparency, or <strong>Motion</strong> for a code-built explainer. Attach <code>ops://claude-artifacts-guide</code> from <code>+</code> → Connectors for product notes.</p>
     </article>
     <article class="card">
       <p class="eyebrow">Host log</p>
       <pre class="log">${log.slice(-8).join("\n") || "Waiting for host messages…"}</pre>
     </article>
   `;
+  if (onLaunchPrompt) {
+    renderPromptLaunchers(root, onLaunchPrompt);
+  }
 }

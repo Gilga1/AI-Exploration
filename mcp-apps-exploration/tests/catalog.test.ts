@@ -39,9 +39,11 @@ describe("MCP prompts and resources", () => {
     const { prompts } = await client.listPrompts();
     const names = prompts.map((p) => p.name).sort();
     assert.deepEqual(names, [
+      "animate_fleet_briefing",
       "delayed_vans_today",
       "incident_playbook",
       "open_gallery",
+      "open_ops_dashboard",
       "region_ops_report",
     ]);
     const region = prompts.find((p) => p.name === "region_ops_report");
@@ -69,6 +71,7 @@ describe("MCP prompts and resources", () => {
     assert.ok(uris.includes(GLOSSARY_URI));
     assert.ok(uris.includes(MY_REGIONS_URI));
     assert.ok(uris.includes("ops://snapshot/today"));
+    assert.ok(uris.includes("ops://claude-artifacts-guide"));
     assert.ok(uris.includes("ops://region/Mission"));
     assert.ok(uris.some((uri) => uri.startsWith("ui://")));
   });
