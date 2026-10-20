@@ -9,6 +9,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { vansForRegion } from "./fleet-ops.ts";
 import { FLEET_SNAPSHOT, type RegionRow } from "./mock-data.ts";
 import {
   delayedVansTodayPromptText,
@@ -87,7 +88,7 @@ export function regionBriefing(region: string): string {
   if (!row) {
     return `# Unknown region\n\nNo mocked region named "${region}". Known: ${REGIONS.join(", ")}.`;
   }
-  const vans = FLEET_SNAPSHOT.vehicles.filter((v) => regionOwnsVan(row, v.id));
+  const vans = FLEET_SNAPSHOT.vehicles.filter((v) => vansForRegion(row.region).includes(v.id));
   const lines = [
     `# ${row.region} region briefing`,
     "",
@@ -125,14 +126,6 @@ ${vans}
 
 ${alerts}
 `;
-}
-
-function regionOwnsVan(row: RegionRow, vanId: string): boolean {
-  if (row.region === "Mission") return vanId === "VAN-07" || vanId === "VAN-03";
-  if (row.region === "SOMA") return vanId === "VAN-14" || vanId === "VAN-22";
-  if (row.region === "Marina") return vanId === "VAN-31";
-  if (row.region === "Sunset") return vanId === "VAN-19";
-  return false;
 }
 
 const regionArg = z

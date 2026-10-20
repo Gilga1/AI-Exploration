@@ -71,10 +71,31 @@ export function createServer(): McpServer {
     readHtml,
   );
 
-  const payloadFor = (view: z.infer<typeof viewSchema>) => ({
+  type FleetView = NonNullable<z.infer<typeof viewSchema>>;
+
+  const payloadFor = (view?: FleetView) => ({
     ...getLiveSnapshot(),
     view: view ?? "overview",
   });
+
+  const openView = (view: FleetView) => ({
+    content: [{ type: "text" as const, text: JSON.stringify({ view }) }],
+    structuredContent: payloadFor(view),
+  });
+
+  const registerViewTool = (
+    name: string,
+    title: string,
+    description: string,
+    view: FleetView,
+  ) => {
+    registerAppTool(
+      server,
+      name,
+      { title, description, _meta: { ui: { resourceUri: RESOURCE_URI } } },
+      async () => openView(view),
+    );
+  };
 
   // UI tools (open MCP App). Domain data tools live in registerDomainTools.
   registerAppTool(
@@ -125,91 +146,41 @@ export function createServer(): McpServer {
     },
   );
 
-  registerAppTool(
-    server,
+  registerViewTool(
     "show_live_map",
-    {
-      title: "Show live fleet map",
-      description: "Open the live map of mocked delivery vans. Pan, zoom, filter, inspect — no Claude turn for map chrome.",
-      _meta: { ui: { resourceUri: RESOURCE_URI } },
-    },
-    async () => ({
-      content: [{ type: "text", text: JSON.stringify({ view: "map" }) }],
-      structuredContent: payloadFor("map"),
-    }),
+    "Show live fleet map",
+    "Open the live map of mocked delivery vans. Pan, zoom, filter, inspect — no Claude turn for map chrome.",
+    "map",
   );
-
-  registerAppTool(
-    server,
+  registerViewTool(
     "show_operations_dashboard",
-    {
-      title: "Show operations board",
-      description:
-        "Ops KPI board with mock query-behind-number. Refresh/filter via callServerTool; Explain only for Claude judgment.",
-      _meta: { ui: { resourceUri: RESOURCE_URI } },
-    },
-    async () => ({
-      content: [{ type: "text", text: JSON.stringify({ view: "dashboard" }) }],
-      structuredContent: payloadFor("dashboard"),
-    }),
+    "Show operations board",
+    "Ops KPI board with mock query-behind-number. Refresh/filter via callServerTool; Explain only for Claude judgment.",
+    "dashboard",
   );
-
-  registerAppTool(
-    server,
+  registerViewTool(
     "show_sheet_patterns",
-    {
-      title: "Show incident sheets",
-      description: "Bottom sheets and confirm dialogs for incident playbook. Confirm/snooze stay in-app; judgment uses chat.",
-      _meta: { ui: { resourceUri: RESOURCE_URI } },
-    },
-    async () => ({
-      content: [{ type: "text", text: JSON.stringify({ view: "modals" }) }],
-      structuredContent: payloadFor("modals"),
-    }),
+    "Show incident sheets",
+    "Bottom sheets and confirm dialogs for incident playbook. Confirm/snooze stay in-app; judgment uses chat.",
+    "modals",
   );
-
-  registerAppTool(
-    server,
+  registerViewTool(
     "show_fleet_briefing",
-    {
-      title: "Show fleet briefing animation",
-      description:
-        "CSS briefing scene (POC only — not Claude Motion / MP4). See CLAUDE_PRODUCT.md.",
-      _meta: { ui: { resourceUri: RESOURCE_URI } },
-    },
-    async () => ({
-      content: [{ type: "text", text: JSON.stringify({ view: "motion" }) }],
-      structuredContent: payloadFor("motion"),
-    }),
+    "Show fleet briefing animation",
+    "CSS briefing scene (POC only — not Claude Motion / MP4). See CLAUDE_PRODUCT.md.",
+    "motion",
   );
-
-  // Alias kept so older prompts still work.
-  registerAppTool(
-    server,
+  registerViewTool(
     "show_fleet_motion",
-    {
-      title: "Show fleet briefing (alias)",
-      description: "Alias for show_fleet_briefing. Not Claude Motion.",
-      _meta: { ui: { resourceUri: RESOURCE_URI } },
-    },
-    async () => ({
-      content: [{ type: "text", text: JSON.stringify({ view: "motion" }) }],
-      structuredContent: payloadFor("motion"),
-    }),
+    "Show fleet briefing (alias)",
+    "Alias for show_fleet_briefing. Not Claude Motion.",
+    "motion",
   );
-
-  registerAppTool(
-    server,
+  registerViewTool(
     "show_interaction_controls",
-    {
-      title: "Show fleet filters",
-      description: "Segmented filters and SLA slider. Apply uses callServerTool; Ask Claude is judgment-only.",
-      _meta: { ui: { resourceUri: RESOURCE_URI } },
-    },
-    async () => ({
-      content: [{ type: "text", text: JSON.stringify({ view: "interact" }) }],
-      structuredContent: payloadFor("interact"),
-    }),
+    "Show fleet filters",
+    "Segmented filters and SLA slider. Apply uses callServerTool; Ask Claude is judgment-only.",
+    "interact",
   );
 
   registerDomainTools(server);
