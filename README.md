@@ -19,10 +19,33 @@ Each project below is self-contained. Pick a branch, read its README, and run fr
 
 | Project | Branch | Summary |
 |---------|--------|---------|
+| [ReAct from scratch](#react-from-scratch) | [`feature/poc-ReAct-agent-foundation`](../../tree/feature/poc-ReAct-agent-foundation) | Bare-metal ReAct (Yao et al., 2022) — paper notes, Wikipedia loop, OpenRouter live eval |
 | [AI Agent Harness](#ai-agent-harness) | [`cursor/agentic-harness`](../../tree/cursor/agentic-harness) | Plugin-based agent orchestration — routing, planning, DAG execution, memory, and tracing |
 | [Agentic RAG Eval Harness](#agentic-rag-eval-harness) | [`hermes/eval-harness`](../../tree/hermes/eval-harness) | LLM-driven evaluation for agentic RAG — LangGraph agent loop, OTel traces, DeepEval scoring |
 | [Semantic Layer Shell](#semantic-layer-shell) | [`cursor/semantic-layer-shell`](../../tree/cursor/semantic-layer-shell) | Platform-agnostic semantic layer with Neo4j graph; deterministic SQL assembly, not LLM-generated |
 | [Qwen Agentic Fine-Tuning](#qwen-agentic-fine-tuning) | [`cursor/qwen-agentic-ft-setup-7e0b`](../../tree/cursor/qwen-agentic-ft-setup-7e0b) | Fine-tune Qwen3.5-2B on LangChain / LangGraph / Deep Agents code patterns |
+
+---
+
+### ReAct from scratch
+
+**Branch:** `feature/poc-ReAct-agent-foundation`
+
+Bare-metal reproduction of [ReAct](https://arxiv.org/abs/2210.03629) (Yao et al., ICLR 2023). Implements the Thought / Action / Observation loop, the paper's Wikipedia `search` / `lookup` / `finish` API, and HotpotQA exact-match scoring — no LangChain.
+
+**What it explores:** why interleaving reasoning traces with tool use is the ancestor of later agent loops; CoT hallucination vs ReAct search misses; execution-based EM/F1 on a public multi-hop mini-set; optional live runs via OpenRouter.
+
+**Get started:**
+```bash
+git fetch origin feature/poc-ReAct-agent-foundation
+git checkout feature/poc-ReAct-agent-foundation
+cd poc/agent-foundation/ReAct
+python -m pip install -e ".[dev]"
+python -m pytest -m "not network"
+export OPENROUTER_API_KEY=... OPENROUTER_MODEL=openai/gpt-4o-mini  # required — no scripted fallback
+python scripts/run_live_eval.py --method react --wiki local
+# See PAPER_NOTES.md and notebooks/react_from_scratch.ipynb
+```
 
 ---
 
