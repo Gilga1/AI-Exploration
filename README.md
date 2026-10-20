@@ -19,7 +19,7 @@ Each project below is self-contained. Pick a branch, read its README, and run fr
 
 | Project | Branch | Summary |
 |---------|--------|---------|
-| [ReAct from scratch](#react-from-scratch) | [`cursor/poc-agent-foundation-react-openrouter-55b7`](../../tree/cursor/poc-agent-foundation-react-openrouter-55b7) | Bare-metal ReAct (Yao et al., 2022) — paper notes, Wikipedia loop, OpenRouter live eval |
+| [ReAct from scratch](#react-from-scratch) | [`feature/poc-ReAct-agent-foundation`](../../tree/feature/poc-ReAct-agent-foundation) | Bare-metal ReAct (Yao et al., 2022) — paper notes, Wikipedia loop, OpenRouter live eval |
 | [AI Agent Harness](#ai-agent-harness) | [`cursor/agentic-harness`](../../tree/cursor/agentic-harness) | Plugin-based agent orchestration — routing, planning, DAG execution, memory, and tracing |
 | [Agentic RAG Eval Harness](#agentic-rag-eval-harness) | [`hermes/eval-harness`](../../tree/hermes/eval-harness) | LLM-driven evaluation for agentic RAG — LangGraph agent loop, OTel traces, DeepEval scoring |
 | [Semantic Layer Shell](#semantic-layer-shell) | [`cursor/semantic-layer-shell`](../../tree/cursor/semantic-layer-shell) | Platform-agnostic semantic layer with Neo4j graph; deterministic SQL assembly, not LLM-generated |
@@ -29,7 +29,7 @@ Each project below is self-contained. Pick a branch, read its README, and run fr
 
 ### ReAct from scratch
 
-**Branch:** `cursor/poc-agent-foundation-react-openrouter-55b7` (live OpenRouter eval). Scripted-only study: `cursor/poc-agent-foundation-react-d23e`.
+**Branch:** `feature/poc-ReAct-agent-foundation`
 
 Bare-metal reproduction of [ReAct](https://arxiv.org/abs/2210.03629) (Yao et al., ICLR 2023). Implements the Thought / Action / Observation loop, the paper's Wikipedia `search` / `lookup` / `finish` API, and HotpotQA exact-match scoring — no LangChain.
 
@@ -37,8 +37,8 @@ Bare-metal reproduction of [ReAct](https://arxiv.org/abs/2210.03629) (Yao et al.
 
 **Get started:**
 ```bash
-git fetch origin cursor/poc-agent-foundation-react-openrouter-55b7
-git checkout cursor/poc-agent-foundation-react-openrouter-55b7
+git fetch origin feature/poc-ReAct-agent-foundation
+git checkout feature/poc-ReAct-agent-foundation
 cd poc/agent-foundation/ReAct
 python -m pip install -e ".[dev]"
 python -m pytest -m "not network"

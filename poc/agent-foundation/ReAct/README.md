@@ -64,7 +64,7 @@ notebooks/
 scripts/run_live_eval.py
 ```
 
-**Branch:** `cursor/poc-agent-foundation-react-openrouter-55b7`
+**Branch:** `feature/poc-ReAct-agent-foundation`
 
 ## What this is not
 
