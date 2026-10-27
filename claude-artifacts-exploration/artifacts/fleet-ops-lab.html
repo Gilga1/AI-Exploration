@@ -6,8 +6,10 @@
   <title>Fleet Ops — Claude Artifact Lab</title>
   <!--
     Paste this file into Claude as an artifact, or open via preview/index.html.
-    Outside Claude, load preview/mock-bridge.js first so window.claude / storage work.
+    Outside Claude, the optional script below installs a mock window.claude / storage.
+    Inside Claude, that URL 404s (or is CSP-blocked) and Anthropic’s inject bridge wins.
   -->
+  <script src="/preview/mock-bridge.js"></script>
   <style>
     :root {
       --ink: #1a2332;
@@ -646,8 +648,13 @@ DO NOT OUTPUT ANYTHING OTHER THAN VALID JSON.`;
 
     function render() {
       applyMotionVars();
-      if (TABS.some((t) => t.id === state.tab)) {
-        history.replaceState(null, "", "#" + state.tab);
+      // Deep-link hash updates — skip when hosted as about:srcdoc (local preview).
+      if (TABS.some((t) => t.id === state.tab) && location.protocol !== "about:") {
+        try {
+          history.replaceState(null, "", "#" + state.tab);
+        } catch (_) {
+          /* ignore sandbox / srcdoc history restrictions */
+        }
       }
       const root = $("#root");
       root.replaceChildren(
