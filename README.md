@@ -1,50 +1,32 @@
-# Qwen Agentic Fine-Tuning
+# AI Exploration
 
-Fine-tune **Qwen3.5-2B-Instruct** on LangChain / LangGraph / Deep Agents code patterns.
+Monorepo for agent / Claude product explorations.
 
-## Quick start
+## Projects on this branch
 
-```bash
-# 1. Create venv and install extraction deps
-bash scripts/setup_env.sh
-source .venv/bin/activate
+| Path | Branch focus |
+| --- | --- |
+| [`claude-artifacts-exploration/`](./claude-artifacts-exploration/) | Claude Artifacts research + Fleet Ops artifact lab |
 
-# 2. Clone Tier-1 repos and extract training JSONL
-bash scripts/extract_data.sh
-
-# Outputs:
-#   data/processed/train.jsonl
-#   data/processed/val.jsonl
-#   data/processed/metadata.json
-```
-
-## Project layout
-
-```
-config/
-  repos.yaml          # GitHub repos to clone
-  extraction.yaml     # Filters, prompts, output paths
-src/qwen_agentic_ft/  # Extraction pipeline
-scripts/
-  setup_env.sh
-  extract_data.sh
-data/
-  repos/              # Shallow git clones (gitignored)
-  processed/          # train/val JSONL (gitignored)
-eval/
-  golden_prompts.template.jsonl
-```
-
-## Training (local CUDA machine)
-
-Install the training stack on a GPU machine:
+### Quick start (Artifacts)
 
 ```bash
-pip install -e ".[train]"
+cd claude-artifacts-exploration
+npm install
+npm test
+npm run preview
 ```
 
-Use Unsloth + bf16 LoRA with `Qwen/Qwen3.5-2B-Instruct`. See the Notion implementation plan for hyperparameters.
+Docs: [`claude-artifacts-exploration/RESEARCH.md`](./claude-artifacts-exploration/RESEARCH.md)
 
-## Notes on context length
+## Related branches
 
-Qwen3.5-2B supports very long context at **inference**, but LoRA training seq length is still bounded by local VRAM. Start at 2048–4096 for training; use long context at inference when providing multi-file repo context.
+| Branch | Contents |
+| --- | --- |
+| `feature/mcp-apps-exploration` | MCP Apps Fleet Ops connector |
+| `feature/mpc-artifact-exploration` | Claude Artifacts exploration (this tree) |
+| `main` | Qwen agentic fine-tuning extraction pipeline |
+
+## License
+
+See [LICENSE](LICENSE).

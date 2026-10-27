@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Claude Artifacts exploration — local preview</title>
+  <link rel="stylesheet" href="/preview/preview.css" />
+</head>
+<body>
+  <header class="bar">
+    <div>
+      <strong>Claude Artifacts lab</strong>
+      <span class="muted">Local preview with mock <code>window.claude</code> + <code>window.storage</code></span>
+    </div>
+    <button type="button" class="link" id="reload">Reload artifact</button>
+  </header>
+  <main>
+    <iframe id="artifactFrame" title="Fleet Ops Artifact Lab"></iframe>
+  </main>
+  <script>
+    async function loadArtifact() {
+      const [bridge, page] = await Promise.all([
+        fetch("/preview/mock-bridge.js").then((r) => r.text()),
+        fetch("/artifacts/fleet-ops-lab.html").then((r) => r.text()),
+      ]);
+      const injected = page.replace(
+        "<head>",
+        `<head>\n<script>${bridge}<\\/script>\n`
+      );
+      document.getElementById("artifactFrame").srcdoc = injected;
+    }
+    document.getElementById("reload").addEventListener("click", loadArtifact);
+    loadArtifact();
+  </script>
+</body>
+</html>
